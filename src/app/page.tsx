@@ -1,65 +1,237 @@
-import Image from "next/image";
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuthButton } from '@/components/AuthButton';
+import { OptionsPanel } from '@/components/OptionsPanel';
+import { OrderInfoPanel } from '@/components/OrderInfoPanel';
+import { PartsTable } from '@/components/PartsTable';
+import { ProjectsDialog } from '@/components/ProjectsDialog';
+import { ResultPane } from '@/components/ResultPane';
+import { useAuth } from '@/lib/auth-context';
+import { saveProjectToCloud } from '@/lib/cloud';
+import { createProject, genId, type CuttingPlan, type Project } from '@/lib/domain/models';
+import { loadLocalProject, saveLocalProject, saveProjectToLocal } from '@/lib/localStore';
+import { saveProjectFile } from '@/lib/projectFile';
+import { useSolver } from '@/lib/solver/useSolver';
 
 export default function Home() {
+  const { user, enabled: cloudEnabled } = useAuth();
+  const solve = useSolver();
+
+  // SSR 하이드레이션 불일치 방지 — 클라이언트에서 localStorage 복원 후 렌더.
+  const [project, setProject] = useState<Project | null>(null);
+  const [plan, setPlan] = useState<CuttingPlan | null>(null);
+  const [calculating, setCalculating] = useState(false);
+  const [showProjectsDialog, setShowProjectsDialog] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 마이크로태스크로 미뤄 하이드레이션 직후 복원 (동기 setState 회피).
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setProject(loadLocalProject() ?? createProject(genId(), '새 프로젝트'));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // localStorage 자동 저장 (500ms 디바운스 — 데스크톱 앱의 autosave 대응).
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (project == null) return;
+    if (saveTimer.current != null) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => saveLocalProject(project), 500);
+    return () => {
+      if (saveTimer.current != null) clearTimeout(saveTimer.current);
+    };
+  }, [project]);
+
+  const update = useCallback((patch: Partial<Project>) => {
+    setProject((p) =>
+      p == null ? p : { ...p, ...patch, updatedAt: new Date().toISOString() },
+    );
+  }, []);
+
+  const runCalculate = async () => {
+    if (project == null || project.parts.length === 0 || calculating) return;
+    setCalculating(true);
+    try {
+      setPlan(await solve(project));
+    } catch (e) {
+      alert(`계산 실패: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const newProject = () => {
+    if (project != null && project.parts.length > 0) {
+      if (!confirm('현재 프로젝트를 비우고 새 프로젝트를 시작할까요? (클라우드에 저장하지 않은 변경은 사라집니다)')) {
+        return;
+      }
+    }
+    setProject(createProject(genId(), '새 프로젝트'));
+    setPlan(null);
+  };
+
+  /** 로컬 저장소에 항상 저장하고, 로그인 상태면 클라우드에도 함께 저장. */
+  const persistProject = async (target: Project) => {
+    setSaving(true);
+    try {
+      saveProjectToLocal(target);
+      let where = '로컬';
+      if (cloudEnabled && user != null) {
+        await saveProjectToCloud(user.uid, target);
+        where = '로컬+클라우드';
+      }
+      setSaveStatus(
+        `"${target.name}" ${where} 저장됨 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
+      );
+    } catch (e) {
+      alert(`저장 실패: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveProject = async () => {
+    if (project == null || saving) return;
+    await persistProject(project);
+  };
+
+  /** 다른 이름으로 저장 — 새 이름의 사본을 만들어 현재 프로젝트로 전환 후 저장 (원본 유지). */
+  const saveProjectAs = async () => {
+    if (project == null || saving) return;
+    const name = window.prompt('다른 이름으로 저장 — 새 프로젝트 이름:', project.name);
+    if (name == null) return; // 취소
+    const trimmed = name.trim();
+    if (trimmed === '') return;
+    const copy: Project = {
+      ...project,
+      id: genId(),
+      name: trimmed,
+      updatedAt: new Date().toISOString(),
+    };
+    setProject(copy);
+    await persistProject(copy);
+  };
+
+  /** .cutmaster 파일로 내보내기 — 저장 위치를 사용자가 직접 선택. */
+  const exportFile = async () => {
+    if (project == null) return;
+    try {
+      const result = await saveProjectFile(project);
+      if (result.kind === 'picked') {
+        setSaveStatus(`파일 저장됨: ${result.fileName}`);
+      } else if (result.kind === 'downloaded') {
+        setSaveStatus(`다운로드 폴더에 저장됨: ${result.fileName}`);
+      }
+    } catch (e) {
+      alert(`내보내기 실패: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  if (project == null) {
+    return (
+      <main className="flex-1 flex items-center justify-center text-muted text-sm">
+        불러오는 중…
+      </main>
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex flex-col min-h-dvh lg:h-dvh">
+      {/* 상단 바 */}
+      <header className="h-13 shrink-0 border-b border-line bg-surface flex items-center gap-3 px-4">
+        <h1 className="text-sm font-bold tracking-tight flex items-center gap-1.5">
+          <span className="inline-block w-4 h-4 rounded-sm bg-accent" aria-hidden />
+          CutMaster
+        </h1>
+        <input
+          className="text-sm font-medium bg-transparent border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 w-52 focus:outline-none"
+          value={project.name}
+          onChange={(e) => update({ name: e.target.value })}
+          placeholder="프로젝트 이름"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+        <button
+          onClick={newProject}
+          className="text-xs text-muted hover:text-foreground px-2 py-1.5 rounded-md hover:bg-zinc-100"
+        >
+          새 프로젝트
+        </button>
+
+        <div className="flex-1" />
+
+        {saveStatus != null && <span className="text-xs text-muted">{saveStatus}</span>}
+        <button
+          onClick={saveProject}
+          disabled={saving}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {saving ? '저장 중…' : cloudEnabled && user != null ? '☁ 저장' : '저장'}
+        </button>
+        <button
+          onClick={saveProjectAs}
+          disabled={saving}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50 disabled:opacity-50"
+          title="현재 내용을 새 이름의 프로젝트 사본으로 저장합니다 (원본 유지)"
+        >
+          다른 이름으로 저장
+        </button>
+        <button
+          onClick={() => setShowProjectsDialog(true)}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50"
+        >
+          내 프로젝트
+        </button>
+        <button
+          onClick={exportFile}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50"
+          title=".cutmaster 파일로 내보내기 (데스크톱 앱 호환) — 저장 위치를 직접 선택"
+        >
+          내보내기
+        </button>
+        <AuthButton />
+      </header>
+
+      {/* 본문 — 좌 입력 / 우 결과 */}
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row">
+        <div className="lg:w-[440px] xl:w-[480px] shrink-0 lg:border-r border-line flex flex-col min-h-0">
+          <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-3 space-y-3">
+            <PartsTable parts={project.parts} onChange={(parts) => update({ parts })} />
+            <OptionsPanel project={project} onChange={update} />
+            <OrderInfoPanel project={project} onChange={update} />
+          </div>
+          <div className="shrink-0 sticky bottom-0 z-10 lg:static p-3 border-t border-line bg-surface">
+            <button
+              onClick={runCalculate}
+              disabled={project.parts.length === 0 || calculating}
+              className="w-full py-2.5 rounded-lg bg-accent text-white font-semibold text-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {calculating ? '계산 중…' : '▶ 계산'}
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="flex-1 min-w-0 lg:overflow-y-auto p-4 flex flex-col">
+          <ResultPane project={project} plan={plan} calculating={calculating} />
         </div>
       </main>
+
+      {showProjectsDialog && (
+        <ProjectsDialog
+          uid={cloudEnabled && user != null ? user.uid : null}
+          onOpenProject={(p) => {
+            setProject(p);
+            setPlan(null);
+            setShowProjectsDialog(false);
+          }}
+          onClose={() => setShowProjectsDialog(false)}
+        />
+      )}
     </div>
   );
 }
