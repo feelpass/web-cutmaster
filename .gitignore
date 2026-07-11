@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright mcp (수동 QA 스크린샷/콘솔 로그 산출물)
+.playwright-mcp/
