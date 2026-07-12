@@ -4,6 +4,8 @@ Flutter 데스크톱 앱 [cutmaster](../cutmaster)의 웹 버전.
 동일한 재단 최적화 알고리즘(`TreeSearchSolver` — panel-saw 호환 best-first 길로틴 탐색)을
 TypeScript로 포팅했으며, Google 로그인 + 클라우드(Firestore) 프로젝트 저장을 지원한다.
 
+**라이브**: https://cutmaster-web.vercel.app — 현재 Firebase env 미설정으로 로컬 전용 모드(로그인/클라우드 비활성, 재단 기능은 정상).
+
 ## 스택
 
 - **Next.js (App Router) + TypeScript + Tailwind CSS**
@@ -12,6 +14,7 @@ TypeScript로 포팅했으며, Google 로그인 + 클라우드(Firestore) 프로
 - **인증/클라우드**: Firebase Auth(Google 로그인) + Firestore
   - 경로: `users/{uid}/projects/{projectId}` — 문서 내용은 데스크톱 `.cutmaster` JSON(schemaVersion 4)과 동일.
 - **로컬**: 현재 프로젝트는 localStorage에 자동 저장 (로그인 없이도 사용 가능).
+- **입출력**: 부품 CSV/Excel 가져오기·내보내기(`xlsx`), `.cutmaster` 프로젝트 파일 열기·저장 (데스크톱 앱과 상호 호환).
 
 ## 원본과 동일하게 유지되는 로직
 
@@ -29,7 +32,7 @@ TypeScript로 포팅했으며, Google 로그인 + 클라우드(Firestore) 프로
 ```bash
 npm install
 npm run dev        # http://localhost:3000
-npm test           # 솔버 테스트 (원본 Flutter 테스트 포팅, 16개)
+npm test           # vitest — 솔버·부품 입출력 테스트 (6개 파일 37개; 솔버 16개는 원본 Flutter 테스트 포팅)
 npm run build      # 프로덕션 빌드
 ```
 
@@ -63,16 +66,18 @@ env 없이 실행하면 **로컬 전용 모드**로 동작한다 (로그인/클�
 
 ## Vercel 배포
 
+https://cutmaster-web.vercel.app 에 배포돼 있다 (프로젝트 `cutmaster-web`, 스코프 `feelpass-projects`).
+CLI로 재배포:
+
 ```bash
-vercel deploy
+vercel deploy --prod
 ```
 
-환경변수(`NEXT_PUBLIC_FIREBASE_*`)를 Vercel 프로젝트에 등록해야 클라우드 기능이 활성화된다
-(`vercel env add` 또는 대시보드).
+클라우드 기능을 켜려면 환경변수(`NEXT_PUBLIC_FIREBASE_*` 6개)를 Vercel 프로젝트에 등록하고
+(`vercel env add` 또는 대시보드) 재배포한 뒤, 배포 도메인(`cutmaster-web.vercel.app`)을
+Firebase **승인된 도메인**에 추가한다. env가 없으면 로컬 전용 모드로 뜬다.
 
 ## 향후 과제
 
-- `.cutmaster` 파일 가져오기/내보내기 (스키마가 동일하므로 데스크톱과 상호 호환)
-- CSV/Excel 부품 가져오기
 - PDF/PNG 결과 내보내기
 - 사용자 정의 색상 프리셋 (현재는 시드 24종 고정)
