@@ -32,8 +32,14 @@ Flutter 데스크톱 앱 `cutmaster`를 웹으로 포팅한 합판 재단(컷리
 
 ```bash
 npm run dev            # 개발 서버 (http://localhost:3000)
-npm test               # vitest — 6개 파일 37개
+npm test               # vitest
 npm run lint
 npm run build
-vercel deploy --prod   # 재배포 (프로젝트 cutmaster-web, 스코프 feelpass-projects)
 ```
+
+## 배포
+
+GitHub 연동 자동 배포 (bomcalendar-community와 동일 방식):
+`main` push → 프로덕션(https://cutmaster-web.vercel.app), PR → 프리뷰 배포.
+Vercel 프로젝트 cutmaster-web(스코프 feelpass-projects) ↔ github.com/feelpass/web-cutmaster.
+`vercel deploy --prod` 수동 배포는 더 이상 기본 경로가 아니다.
