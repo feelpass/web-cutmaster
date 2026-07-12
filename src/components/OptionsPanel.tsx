@@ -48,6 +48,15 @@ export function OptionsPanel({ project, onChange }: Props) {
             />
             결방향 고정 (회전 금지)
           </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="accent-[#5e6ad2]"
+              checked={project.showPartLabels}
+              onChange={(e) => onChange({ showPartLabels: e.target.checked })}
+            />
+            부품 라벨 표시
+          </label>
         </div>
         <div>
           <p className="text-xs text-muted mb-1.5">헤드컷 — 자재 가장자리에서 잘라낼 mm</p>

@@ -5,6 +5,7 @@ import { AuthButton } from '@/components/AuthButton';
 import { OptionsPanel } from '@/components/OptionsPanel';
 import { OrderInfoPanel } from '@/components/OrderInfoPanel';
 import { PartsTable } from '@/components/PartsTable';
+import { PrintReport } from '@/components/PrintReport';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { ResultPane } from '@/components/ResultPane';
 import { useAuth } from '@/lib/auth-context';
@@ -143,7 +144,8 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh lg:h-dvh">
+    <>
+    <div className="flex flex-col min-h-dvh lg:h-dvh print:hidden">
       {/* 상단 바 */}
       <header className="h-13 shrink-0 border-b border-line bg-surface flex items-center gap-3 px-4">
         <h1 className="text-sm font-bold tracking-tight flex items-center gap-1.5">
@@ -201,7 +203,15 @@ export default function Home() {
       <main className="flex-1 min-h-0 flex flex-col lg:flex-row">
         <div className="lg:w-[440px] xl:w-[480px] shrink-0 lg:border-r border-line flex flex-col min-h-0">
           <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-3 space-y-3">
-            <PartsTable parts={project.parts} onChange={(parts) => update({ parts })} />
+            <PartsTable
+              parts={project.parts}
+              onChange={(parts) => update({ parts })}
+              projectName={project.name}
+              onArticle={(article) => {
+                // 데스크톱과 동일: 프로젝트명이 비어있거나 기본값일 때만 ARTICLE 로 채움.
+                if (project.name === '' || project.name === '새 프로젝트') update({ name: article });
+              }}
+            />
             <OptionsPanel project={project} onChange={update} />
             <OrderInfoPanel project={project} onChange={update} />
           </div>
@@ -232,6 +242,11 @@ export default function Home() {
           onClose={() => setShowProjectsDialog(false)}
         />
       )}
+
     </div>
+
+    {/* PDF 저장(인쇄) 시에만 보이는 리포트 — 요약 + 시트별 페이지 */}
+    {plan != null && <PrintReport project={project} plan={plan} />}
+    </>
   );
 }

@@ -5,7 +5,15 @@ import type { CutPart, GrainDirection } from '@/lib/domain/models';
 import { createCutPart, genId } from '@/lib/domain/models';
 import { importPartsFromFile } from '@/lib/domain/partsImport';
 import { exportPartsToFile } from '@/lib/domain/partsExport';
-import { argbToCss, seedColorPresets } from '@/lib/domain/presets';
+import {
+  applyMerge,
+  detectConflicts,
+  mergeSummary,
+  type MergeAction,
+  type PartsMergeConflict,
+} from '@/lib/domain/partsMerge';
+import { argbToCss } from '@/lib/domain/presets';
+import { allColorPresets, colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
 
 const GRAIN_LABELS: Record<GrainDirection, string> = {
   none: '없음',
@@ -13,28 +21,103 @@ const GRAIN_LABELS: Record<GrainDirection, string> = {
   widthwise: '세로',
 };
 
+const MATERIAL_DATALIST_ID = 'cutmaster-material-names';
+
+/**
+ * 자재 이름 텍스트 입력 셀 — 원본 MaterialNameInput 대응.
+ * 확정(blur/Enter) 시: 빈 문자열 → null, 기존 프리셋 이름 일치 → 그 id,
+ * 일치 없음 → 프리셋 자동 생성 후 새 id.
+ */
+function MaterialCell({
+  colorPresetId,
+  onChange,
+}: {
+  colorPresetId: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const preset = colorPresetById(colorPresetId);
+  const [text, setText] = useState(preset?.name ?? '');
+
+  // colorPresetId가 밖에서 바뀌면(임포트·행 교체) 입력 텍스트를 동기화.
+  const [prevId, setPrevId] = useState(colorPresetId);
+  if (prevId !== colorPresetId) {
+    setPrevId(colorPresetId);
+    setText(preset?.name ?? '');
+  }
+
+  const commit = () => {
+    // 표시 중인 이름과 같으면 변경 없음 — 이름 미해석(id만 아는) 프리셋도 보존.
+    if (text.trim() === (preset?.name ?? '')) return;
+    onChange(findOrCreateColorByName(text));
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      <span
+        className="w-3.5 h-3.5 rounded-sm border border-black/10 shrink-0"
+        style={{
+          background:
+            preset != null
+              ? argbToCss(preset.argb)
+              : 'repeating-linear-gradient(45deg,#e5e7eb 0 3px,#fff 3px 6px)',
+        }}
+      />
+      <input
+        className="w-full bg-transparent py-1.5 text-sm focus:outline-none focus:bg-indigo-50/50 rounded"
+        list={MATERIAL_DATALIST_ID}
+        value={text}
+        placeholder="자동"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
+    </div>
+  );
+}
+
 interface Props {
   parts: CutPart[];
   onChange: (parts: CutPart[]) => void;
+  /** CSV 내보내기의 ARTICLE 컬럼·기본 파일명에 쓰는 프로젝트명. */
+  projectName?: string;
+  /** 임포트 파일의 ARTICLE 값 — 데스크톱처럼 프로젝트명이 비어있으면 이걸로 채운다. */
+  onArticle?: (article: string) => void;
 }
 
-export function PartsTable({ parts, onChange }: Props) {
+export function PartsTable({ parts, onChange, projectName = '', onArticle }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [merge, setMerge] = useState<{
+    conflicts: PartsMergeConflict[];
+    imported: CutPart[];
+    article: string;
+  } | null>(null);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // 같은 파일을 연속으로 선택할 수 있게 초기화.
     if (file == null) return;
     setImporting(true);
+    setNotice(null);
     try {
-      const imported = await importPartsFromFile(file);
+      const { parts: imported, article } = await importPartsFromFile(file, findOrCreateColorByName);
       if (imported.length === 0) {
         alert('파일에서 부품을 찾지 못했습니다. 첫 행이 헤더(PART, W, D, QTY …)인지 확인하세요.');
         return;
       }
-      onChange([...parts, ...imported]);
+      const conflicts = detectConflicts(parts, imported);
+      if (conflicts.length === 0) {
+        // 충돌 0건이면 단순 append (데스크톱과 동일).
+        onChange([...parts, ...imported]);
+        if (article !== '') onArticle?.(article);
+      } else {
+        // 충돌은 사용자 선택으로 처리 — 데스크톱 parts_merge_dialog 대응.
+        setMerge({ conflicts, imported, article });
+      }
     } catch (err) {
       alert(`불러오기 실패: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -42,13 +125,25 @@ export function PartsTable({ parts, onChange }: Props) {
     }
   };
 
+  const handleMergeAction = (action: MergeAction) => {
+    if (merge == null) return;
+    setMerge(null);
+    if (action === 'cancel') {
+      setNotice('가져오기를 취소했습니다');
+      return;
+    }
+    const result = applyMerge(parts, merge.imported, action);
+    onChange(result.mergedParts);
+    if (merge.article !== '') onArticle?.(merge.article);
+    setNotice(mergeSummary(result));
+  };
+
   const handleExport = async () => {
     if (parts.length === 0) return;
     setExporting(true);
     try {
-      const d = new Date();
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-      await exportPartsToFile(parts, `부품_${stamp}.xlsx`);
+      const fileName = `${projectName !== '' ? projectName : 'parts'}.CSV`;
+      await exportPartsToFile(parts, fileName, projectName, (id) => colorPresetById(id)?.name ?? '');
     } catch (err) {
       alert(`저장 실패: ${err instanceof Error ? err.message : err}`);
     } finally {
@@ -89,7 +184,10 @@ export function PartsTable({ parts, onChange }: Props) {
   return (
     <section className="bg-surface border border-line rounded-lg overflow-hidden">
       <header className="flex items-center justify-between px-3 py-2 border-b border-line">
-        <h2 className="text-sm font-semibold">부품</h2>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h2 className="text-sm font-semibold">부품</h2>
+          {notice != null && <span className="text-xs text-muted truncate">{notice}</span>}
+        </div>
         <div className="flex gap-1">
           {parts.length > 0 && (
             <button
@@ -121,9 +219,9 @@ export function PartsTable({ parts, onChange }: Props) {
               onClick={handleExport}
               disabled={exporting}
               className="text-xs text-muted hover:text-foreground font-medium px-2 py-1 rounded hover:bg-zinc-100 disabled:opacity-50"
-              title="부품을 엑셀(xlsx) 파일로 저장 (PART, W, D, T, MATERIAL, GRAIN, QTY …)"
+              title="부품을 CSV 파일로 저장 — 데스크톱 앱과 동일 형식 (PART, W, D, T, MATERIAL, GRAIN, QTY …)"
             >
-              {exporting ? '저장 중…' : '엑셀 저장'}
+              {exporting ? '저장 중…' : 'CSV 저장'}
             </button>
           )}
           <button
@@ -141,6 +239,11 @@ export function PartsTable({ parts, onChange }: Props) {
         </p>
       ) : (
         <div className="overflow-x-auto">
+          <datalist id={MATERIAL_DATALIST_ID}>
+            {allColorPresets().map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
+          </datalist>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
@@ -150,7 +253,7 @@ export function PartsTable({ parts, onChange }: Props) {
                 <th className="font-medium text-right px-2 py-1.5 w-14">수량</th>
                 <th className="font-medium text-right px-2 py-1.5 w-14">두께</th>
                 <th className="font-medium text-left px-2 py-1.5 w-18">결</th>
-                <th className="font-medium text-left px-2 py-1.5 w-28">자재색</th>
+                <th className="font-medium text-left px-2 py-1.5 w-28">자재</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -219,34 +322,10 @@ export function PartsTable({ parts, onChange }: Props) {
                     </select>
                   </td>
                   <td>
-                    <div className="flex items-center gap-1.5 px-1">
-                      <span
-                        className="w-3.5 h-3.5 rounded-sm border border-black/10 shrink-0"
-                        style={{
-                          background:
-                            p.colorPresetId != null
-                              ? argbToCss(
-                                  seedColorPresets.find((c) => c.id === p.colorPresetId)?.argb ??
-                                    0xffd4b896,
-                                )
-                              : 'repeating-linear-gradient(45deg,#e5e7eb 0 3px,#fff 3px 6px)',
-                        }}
-                      />
-                      <select
-                        className="w-full bg-transparent py-1.5 text-sm focus:outline-none rounded"
-                        value={p.colorPresetId ?? ''}
-                        onChange={(e) =>
-                          updateRow(i, { colorPresetId: e.target.value === '' ? null : e.target.value })
-                        }
-                      >
-                        <option value="">자동</option>
-                        {seedColorPresets.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <MaterialCell
+                      colorPresetId={p.colorPresetId}
+                      onChange={(id) => updateRow(i, { colorPresetId: id })}
+                    />
                   </td>
                   <td>
                     <button
@@ -261,6 +340,59 @@ export function PartsTable({ parts, onChange }: Props) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* 중복 부품 머지 다이얼로그 — 데스크톱 parts_merge_dialog 대응 */}
+      {merge != null && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-md flex flex-col">
+            <header className="px-4 py-3 border-b border-line">
+              <h2 className="text-sm font-semibold">중복 부품이 있습니다</h2>
+            </header>
+            <div className="p-4 text-sm">
+              <p className="text-muted">
+                기존 목록과 동일한 부품 {merge.conflicts.length}개가 발견되었습니다.
+                <br />
+                (이름 + 자재 + 사이즈 모두 일치)
+              </p>
+              <ul className="mt-3 max-h-48 overflow-y-auto text-xs text-muted space-y-0.5">
+                {merge.conflicts.map((c, i) => (
+                  <li key={i}>
+                    • {c.incoming.label} {c.incoming.length.toFixed(0)}×{c.incoming.width.toFixed(0)} (
+                    {c.incoming.thickness.toFixed(0)}T) ×{c.incoming.qty}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 font-medium">어떻게 처리할까요?</p>
+            </div>
+            <footer className="px-4 py-3 border-t border-line flex justify-end gap-1">
+              <button
+                onClick={() => handleMergeAction('cancel')}
+                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-md hover:bg-zinc-100"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => handleMergeAction('renameAndAdd')}
+                className="text-xs text-accent hover:text-accent-hover px-3 py-1.5 rounded-md hover:bg-indigo-50"
+              >
+                이름 변경 후 추가
+              </button>
+              <button
+                onClick={() => handleMergeAction('addQty')}
+                className="text-xs text-accent hover:text-accent-hover px-3 py-1.5 rounded-md hover:bg-indigo-50"
+              >
+                수량 증가
+              </button>
+              <button
+                onClick={() => handleMergeAction('overwrite')}
+                className="text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover"
+              >
+                덮어쓰기
+              </button>
+            </footer>
+          </div>
         </div>
       )}
     </section>

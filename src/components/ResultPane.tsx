@@ -1,9 +1,11 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import type { CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
-import { colorPresetById } from '@/lib/domain/presets';
+import { colorPresetById } from '@/lib/colorPresets';
+import { exportSheetsToPng } from '@/lib/sheetImageExport';
 import { SheetSvg } from './SheetSvg';
 
 interface Props {
@@ -26,6 +28,31 @@ function Chip({ label, value, warn = false }: { label: string; value: string; wa
 }
 
 export function ResultPane({ project, plan, calculating }: Props) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [savingPng, setSavingPng] = useState(false);
+
+  const savePng = async () => {
+    const grid = gridRef.current;
+    if (plan == null || grid == null || savingPng) return;
+    setSavingPng(true);
+    try {
+      const svgs = [...grid.querySelectorAll<SVGSVGElement>('figure svg')];
+      const headers = plan.sheets.map((s, i) => {
+        const first = s.placed[0]?.part;
+        const material =
+          first != null
+            ? ` · ${colorPresetById(first.colorPresetId)?.name ?? '기본'} ${first.thickness}T`
+            : '';
+        return `시트 ${i + 1} / ${plan.sheets.length} · ${s.sheetLength.toFixed(0)} × ${s.sheetWidth.toFixed(0)} mm${material} · 효율 ${sheetUsedPercent(s).toFixed(1)}%`;
+      });
+      await exportSheetsToPng(svgs, headers);
+    } catch (e) {
+      alert(`이미지 저장 실패: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSavingPng(false);
+    }
+  };
+
   if (calculating) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted">
@@ -61,7 +88,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
 
   return (
     <div className="flex-1 flex flex-col gap-4 min-w-0">
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         <Chip label="시트" value={`${summary.totalSheets}매`} />
         <Chip label="효율" value={`${summary.efficiencyPercent.toFixed(1)}%`} />
         <Chip
@@ -69,9 +96,26 @@ export function ResultPane({ project, plan, calculating }: Props) {
           value={`${summary.cutsAreEstimated ? '≈' : ''}${summary.totalCuts}회`}
         />
         <Chip label="부품" value={`${summary.totalPlacedParts}개`} />
+        <Chip label="면적" value={`${(summary.totalUsedAreaMm2 / 1e6).toFixed(3)} m²`} />
         {plan.unplaced.length > 0 && (
           <Chip label="미배치" value={`${plan.unplaced.length}개`} warn />
         )}
+        <div className="flex-1" />
+        <button
+          onClick={() => window.print()}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50"
+          title="요약 + 시트별 배치도를 인쇄 대화상자에서 PDF로 저장"
+        >
+          PDF 저장
+        </button>
+        <button
+          onClick={savePng}
+          disabled={savingPng}
+          className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50 disabled:opacity-50"
+          title="시트별 PNG 이미지 파일로 저장 (cutmaster-sheet-N.png)"
+        >
+          {savingPng ? '저장 중…' : '이미지 저장'}
+        </button>
       </div>
 
       {plan.unplaced.length > 0 && (
@@ -83,17 +127,69 @@ export function ResultPane({ project, plan, calculating }: Props) {
         </div>
       )}
 
-      {summary.materialUsages.length > 0 && (
-        <div className="text-xs text-muted flex gap-3 flex-wrap">
-          {summary.materialUsages.map((m) => (
-            <span key={m.id}>
-              {m.name} <b className="text-foreground">{m.sheetCount}매</b>
-            </span>
-          ))}
+      {/* 재료 목록 + 부품 그룹 — 데스크톱 result_summary_panel 대응 */}
+      {(summary.materialUsages.length > 0 || summary.partGroups.length > 0) && (
+        <div className="flex gap-4 flex-wrap items-start">
+          {summary.materialUsages.length > 0 && (
+            <div className="min-w-56">
+              <p className="text-xs font-medium text-muted mb-1">
+                재료 {summary.materialUsages.length}종
+              </p>
+              <table className="text-xs border border-line rounded overflow-hidden border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 text-muted">
+                    <th className="font-medium text-left px-2 py-1 border-b border-line">자재</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-12">매수</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-16">m²</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.materialUsages.map((m) => (
+                    <tr key={m.id} className="border-b border-line/60 last:border-b-0">
+                      <td className="px-2 py-1">{m.name}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{m.sheetCount}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {(m.usedAreaMm2 / 1e6).toFixed(3)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {summary.partGroups.length > 0 && (
+            <details className="min-w-64">
+              <summary className="text-xs font-medium text-muted mb-1 cursor-pointer select-none">
+                부품 {summary.partGroups.length}종 (펼치기)
+              </summary>
+              <table className="text-xs border border-line rounded overflow-hidden border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 text-muted">
+                    <th className="font-medium text-left px-2 py-1 border-b border-line">부품</th>
+                    <th className="font-medium text-left px-2 py-1 border-b border-line">자재</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-20">사이즈</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-12">수량</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.partGroups.map((p, i) => (
+                    <tr key={i} className="border-b border-line/60 last:border-b-0">
+                      <td className="px-2 py-1">{p.label === '' ? '—' : p.label}</td>
+                      <td className="px-2 py-1 text-muted">{p.materialName}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {p.length.toFixed(0)}×{p.width.toFixed(0)}
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums">{p.qty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          )}
         </div>
       )}
 
-      <div className="grid gap-5 grid-cols-1 xl:grid-cols-2">
+      <div ref={gridRef} className="grid gap-5 grid-cols-1 xl:grid-cols-2">
         {plan.sheets.map((s, i) => {
           const first = s.placed[0]?.part;
           const materialName =
