@@ -90,6 +90,56 @@ describe('toCutParts', () => {
     expect(parts.every((p) => p.id !== '')).toBe(true);
   });
 
+  test('resolveColorId 주입 시 미등록 자재도 자재 구분(colorPresetId)이 유지된다', () => {
+    const rows = parsePartMatrix([
+      ['PART', 'W', 'D', 'T', 'MATERIAL', 'GRAIN', 'QTY'],
+      ['a', '10', '10', '18', 'E0화이트_18T', '0', '1'],
+      ['b', '10', '10', '18', 'PB오크_18T', '0', '1'],
+      ['c', '10', '10', '18', 'E0화이트_18T', '0', '1'],
+      ['d', '10', '10', '18', '', '0', '1'],
+    ]);
+    // find-or-create 대응: 이름별로 안정적인 id를 돌려주는 리졸버.
+    const parts = toCutParts(rows, (name) => (name === '' ? null : `cp_test_${name}`));
+    expect(parts[0].colorPresetId).toBe('cp_test_E0화이트');
+    expect(parts[1].colorPresetId).toBe('cp_test_PB오크');
+    expect(parts[2].colorPresetId).toBe(parts[0].colorPresetId); // 같은 자재는 같은 구분
+    expect(parts[3].colorPresetId).toBeNull();
+  });
+
+  test('데스크톱 앱이 저장한 CSV(BOM+CRLF+ORIENTATION)에서 자재 그룹이 유지된다', async () => {
+    const csv =
+      '﻿' +
+      [
+        'PART,W,D,T,MATERIAL,GRAIN,QTY,ARTICLE,EDGE1,EDGE2,EDGE3,EDGE4,FILE,GROOVE,ORIENTATION',
+        '이동선반,760,356,23,화이트_23T,0,10,4단도어장,,,,,,,1',
+        '우측판,704,380,18,화이트_18T,0,5,4단도어장,,,,,,,1',
+        '우도어,718,395.5,18,LT_18T,1,5,4단도어장,,,,,,,1',
+        '뒷판,714,772,3,화이트_3T,0,5,4단도어장,,,,,,,1',
+      ].join('\r\n') +
+      '\r\n';
+
+    // 브라우저 임포트 경로(importPartsFromFile)와 동일하게 SheetJS 로 CSV 를 읽는다.
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(csv, { type: 'string' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, {
+      header: 1, raw: false, defval: '', blankrows: false,
+    });
+    const rows = parsePartMatrix(matrix);
+
+    expect(rows).toHaveLength(4);
+    expect(rows[0].article).toBe('4단도어장');
+    expect(rows[2].width).toBe(395.5);
+    expect(rows.map((r) => `${r.materialColorName}|${r.materialThickness}`)).toEqual([
+      '화이트|23', '화이트|18', 'LT|18', '화이트|3',
+    ]);
+
+    // find-or-create 리졸버로 변환하면 (자재색, 두께) 그룹 키가 4종으로 구분된다.
+    const parts = toCutParts(rows, (name) => (name === '' ? null : `cp_${name}`));
+    const groupKeys = new Set(parts.map((p) => `${p.colorPresetId ?? ''}|${p.thickness}`));
+    expect(groupKeys).toEqual(new Set(['cp_화이트|23', 'cp_화이트|18', 'cp_LT|18', 'cp_화이트|3']));
+  });
+
   test('EDGE/FILE/GROOVE 컬럼을 부품에 반영한다', () => {
     const rows = parsePartMatrix([
       ['PART', 'W', 'D', 'EDGE1', 'EDGE2', 'EDGE3', 'EDGE4', 'FILE', 'GROOVE'],

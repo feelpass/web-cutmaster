@@ -121,8 +121,15 @@ function matchColorPresetId(name: string): string | null {
   return seedColorPresets.find((c) => c.name === name)?.id ?? null;
 }
 
-/** ParsedPartRow[] → CutPart[]. id 는 호출 시점에 생성한다. */
-export function toCutParts(rows: ParsedPartRow[]): CutPart[] {
+/**
+ * ParsedPartRow[] → CutPart[]. id 는 호출 시점에 생성한다.
+ * [resolveColorId] 로 자재명 → colorPresetId 해석을 주입할 수 있다 — UI에서는
+ * find-or-create(원본 _findOrCreateColorByName 대응)를 넘겨 미등록 자재도 구분을 유지한다.
+ */
+export function toCutParts(
+  rows: ParsedPartRow[],
+  resolveColorId: (name: string) => string | null = matchColorPresetId,
+): CutPart[] {
   return rows.map((r) =>
     createCutPart({
       id: genId(),
@@ -130,7 +137,7 @@ export function toCutParts(rows: ParsedPartRow[]): CutPart[] {
       width: r.width,
       qty: r.qty,
       label: r.label,
-      colorPresetId: matchColorPresetId(r.materialColorName),
+      colorPresetId: resolveColorId(r.materialColorName),
       grainDirection: r.grain,
       thickness: r.materialThickness,
       edges: r.edges,
@@ -140,16 +147,25 @@ export function toCutParts(rows: ParsedPartRow[]): CutPart[] {
   );
 }
 
+export interface ImportPartsResult {
+  parts: CutPart[];
+  /** 첫 행의 ARTICLE 값 — 데스크톱은 프로젝트명이 비어있을 때 이걸로 채운다. */
+  article: string;
+}
+
 /**
- * 파일(csv/xlsx/xlsm)을 읽어 CutPart[] 로. SheetJS 는 동적 import 하여 초기 번들에서 제외한다.
+ * 파일(csv/xlsx/xlsm)을 읽어 부품 목록으로. SheetJS 는 동적 import 하여 초기 번들에서 제외한다.
  * 첫 시트만 읽는다.
  */
-export async function importPartsFromFile(file: File): Promise<CutPart[]> {
+export async function importPartsFromFile(
+  file: File,
+  resolveColorId?: (name: string) => string | null,
+): Promise<ImportPartsResult> {
   const XLSX = await import('xlsx');
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array' });
   const first = wb.SheetNames[0];
-  if (first == null) return [];
+  if (first == null) return { parts: [], article: '' };
   const sheet = wb.Sheets[first];
   // header:1 → 행 배열. raw:false 로 값을 문자열화, defval 로 빈 셀도 '' 유지.
   const matrix = XLSX.utils.sheet_to_json<string[]>(sheet, {
@@ -158,5 +174,9 @@ export async function importPartsFromFile(file: File): Promise<CutPart[]> {
     defval: '',
     blankrows: false,
   });
-  return toCutParts(parsePartMatrix(matrix));
+  const rows = parsePartMatrix(matrix);
+  return {
+    parts: toCutParts(rows, resolveColorId),
+    article: rows[0]?.article ?? '',
+  };
 }

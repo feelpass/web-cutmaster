@@ -3,15 +3,22 @@
 import { describe, expect, test } from 'vitest';
 import { createCutPart, genId } from '../models';
 import { parsePartMatrix, toCutParts } from '../partsImport';
-import { partsToMatrix } from '../partsExport';
+import { partsToCsv, partsToMatrix } from '../partsExport';
 
 describe('partsToMatrix', () => {
-  test('첫 행은 헤더', () => {
+  test('첫 행은 헤더 (데스크톱 PartsCsvExporter와 동일 — ORIENTATION 포함)', () => {
     const [header] = partsToMatrix([]);
     expect(header).toEqual([
       'PART', 'W', 'D', 'T', 'MATERIAL', 'GRAIN', 'QTY', 'ARTICLE',
-      'EDGE1', 'EDGE2', 'EDGE3', 'EDGE4', 'FILE', 'GROOVE',
+      'EDGE1', 'EDGE2', 'EDGE3', 'EDGE4', 'FILE', 'GROOVE', 'ORIENTATION',
     ]);
+  });
+
+  test('ARTICLE 컬럼에 프로젝트명, ORIENTATION 은 항상 1', () => {
+    const parts = [createCutPart({ id: genId(), length: 10, width: 10, qty: 1 })];
+    const [, row] = partsToMatrix(parts, undefined, '4단도어장');
+    expect(row[7]).toBe('4단도어장');
+    expect(row[14]).toBe(1);
   });
 
   test('colorPresetId 있으면 MATERIAL 은 색상명_두께T, 자동이면 빈칸', () => {
@@ -31,6 +38,30 @@ describe('partsToMatrix', () => {
       createCutPart({ id: genId(), length: 10, width: 10, qty: 1, grainDirection: 'widthwise' }),
     ];
     expect(partsToMatrix(parts).slice(1).map((r) => r[5])).toEqual([0, 1, 2]);
+  });
+});
+
+describe('partsToCsv', () => {
+  test('데스크톱 CSV 형식: BOM + CRLF, 커스텀 자재명_두께T 포함', () => {
+    const parts = [
+      createCutPart({
+        id: genId(), label: '이동선반', length: 760, width: 356, qty: 10,
+        colorPresetId: 'cp_x', thickness: 23,
+      }),
+    ];
+    const csv = partsToCsv(parts, '4단도어장', (id) => (id === 'cp_x' ? '화이트' : ''));
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const lines = csv.slice(1).split('\r\n');
+    expect(lines[0]).toBe('PART,W,D,T,MATERIAL,GRAIN,QTY,ARTICLE,EDGE1,EDGE2,EDGE3,EDGE4,FILE,GROOVE,ORIENTATION');
+    expect(lines[1]).toBe('이동선반,760,356,23,화이트_23T,0,10,4단도어장,,,,,,,1');
+  });
+
+  test('콤마/따옴표가 든 셀은 escape 된다', () => {
+    const parts = [
+      createCutPart({ id: genId(), label: '선반,좌"우', length: 10, width: 10, qty: 1 }),
+    ];
+    const csv = partsToCsv(parts, '');
+    expect(csv).toContain('"선반,좌""우"');
   });
 });
 
