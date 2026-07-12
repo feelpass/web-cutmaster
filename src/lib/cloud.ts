@@ -12,6 +12,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { projectFromJson, projectToJson, type Project } from './domain/models';
+import { attachColorPresets, registerColorPresetsFromJson } from './colorPresets';
 import { firestore } from './firebase';
 
 export interface CloudProjectMeta {
@@ -27,7 +28,7 @@ function projectsCol(uid: string) {
 
 export async function saveProjectToCloud(uid: string, project: Project): Promise<void> {
   const json = projectToJson({ ...project, updatedAt: new Date().toISOString() });
-  await setDoc(doc(projectsCol(uid), project.id), json);
+  await setDoc(doc(projectsCol(uid), project.id), attachColorPresets(json, project.parts));
 }
 
 export async function listCloudProjects(uid: string): Promise<CloudProjectMeta[]> {
@@ -46,7 +47,9 @@ export async function listCloudProjects(uid: string): Promise<CloudProjectMeta[]
 export async function loadCloudProject(uid: string, projectId: string): Promise<Project | null> {
   const snap = await getDoc(doc(projectsCol(uid), projectId));
   if (!snap.exists()) return null;
-  return projectFromJson(snap.data());
+  const data = snap.data();
+  registerColorPresetsFromJson(data);
+  return projectFromJson(data);
 }
 
 export async function deleteCloudProject(uid: string, projectId: string): Promise<void> {

@@ -2,6 +2,7 @@
 // JSON 스키마(schemaVersion 4)가 데스크톱 앱과 동일해 상호 호환된다.
 
 import { projectFromJson, projectToJson, type Project } from './domain/models';
+import { attachColorPresets, registerColorPresetsFromJson } from './colorPresets';
 
 interface SaveFilePickerType {
   description: string;
@@ -75,7 +76,8 @@ export async function saveDataToFile(
  * 프로젝트를 .cutmaster 파일로 저장. 저장 위치·파일명은 사용자가 직접 선택.
  */
 export async function saveProjectFile(project: Project): Promise<SaveFileResult> {
-  const json = JSON.stringify(projectToJson(project), null, 2);
+  // 자재 프리셋(이름/색)을 동봉해 다시 열 때 자재 구분이 복원되게 한다.
+  const json = JSON.stringify(attachColorPresets(projectToJson(project), project.parts), null, 2);
   const fileName = `${project.name.trim() !== '' ? project.name : 'project'}.cutmaster`;
   return saveDataToFile(
     json,
@@ -87,5 +89,7 @@ export async function saveProjectFile(project: Project): Promise<SaveFileResult>
 
 export async function readProjectFile(file: File): Promise<Project> {
   const text = await file.text();
-  return projectFromJson(JSON.parse(text));
+  const j = JSON.parse(text) as Record<string, unknown>;
+  registerColorPresetsFromJson(j);
+  return projectFromJson(j);
 }

@@ -2,7 +2,8 @@
 // user 명시 색(colorPresetId) 우선, 없으면 id 해시 기반 golden-angle hue.
 
 import type { CutPart } from './domain/models';
-import { argbToCss, colorPresetById } from './domain/presets';
+import { argbToCss } from './domain/presets';
+import { colorPresetById } from './colorPresets';
 
 function hashString(s: string): number {
   let h = 0;

@@ -3,6 +3,7 @@
 // - 저장된 프로젝트 목록: 명시적 "저장"으로 쌓이는 다중 프로젝트 저장소.
 
 import { projectFromJson, projectToJson, type Project } from './domain/models';
+import { attachColorPresets, registerColorPresetsFromJson } from './colorPresets';
 
 const CURRENT_KEY = 'cutmaster.currentProject';
 const PROJECTS_KEY = 'cutmaster.projects';
@@ -18,7 +19,8 @@ export interface LocalProjectMeta {
 
 export function saveLocalProject(project: Project): void {
   try {
-    localStorage.setItem(CURRENT_KEY, JSON.stringify(projectToJson(project)));
+    const json = attachColorPresets(projectToJson(project), project.parts);
+    localStorage.setItem(CURRENT_KEY, JSON.stringify(json));
   } catch {
     // storage 불가(사파리 시크릿 등) — 무시.
   }
@@ -28,7 +30,9 @@ export function loadLocalProject(): Project | null {
   try {
     const raw = localStorage.getItem(CURRENT_KEY);
     if (raw == null) return null;
-    return projectFromJson(JSON.parse(raw));
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    registerColorPresetsFromJson(j);
+    return projectFromJson(j);
   } catch {
     return null;
   }
@@ -55,7 +59,8 @@ function writeMap(map: ProjectMap): void {
 
 export function saveProjectToLocal(project: Project): void {
   const map = readMap();
-  map[project.id] = projectToJson({ ...project, updatedAt: new Date().toISOString() });
+  const json = projectToJson({ ...project, updatedAt: new Date().toISOString() });
+  map[project.id] = attachColorPresets(json, project.parts);
   writeMap(map);
 }
 
@@ -76,6 +81,7 @@ export function loadLocalProjectById(id: string): Project | null {
   const j = map[id];
   if (j == null) return null;
   try {
+    registerColorPresetsFromJson(j);
     return projectFromJson(j);
   } catch {
     return null;
