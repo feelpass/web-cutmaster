@@ -1,5 +1,8 @@
-// cutmaster(Flutter) ui/utils/png_export.dart 대응 — 시트별 PNG 파일 저장.
-// 화면에 렌더된 SheetSvg(SVG)를 canvas 로 래스터해 헤더 텍스트와 함께 PNG 로 내려받는다.
+// cutmaster(Flutter) ui/utils/png_export.dart 대응 — 시트별 PNG 를 zip 하나로 저장.
+// 화면에 렌더된 SheetSvg(SVG)를 canvas 로 래스터해 헤더 텍스트와 함께 PNG 로 만들고,
+// `cutmaster-sheet-N.png` 들을 zip 으로 묶어 한 번에 내려받는다.
+
+import { saveDataToFile, type SaveFileResult } from './projectFile';
 
 const HEADER_HEIGHT_PX = 40;
 const SHEET_BG = '#f6f1e7';
@@ -59,30 +62,28 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 /**
- * 컨테이너 안의 모든 시트 SVG 를 `cutmaster-sheet-N.png` 로 내려받는다
- * (데스크톱 png_export 의 파일명 규칙). 브라우저가 다중 다운로드 허용을 물을 수 있다.
+ * 모든 시트 SVG 를 `cutmaster-sheet-N.png`(데스크톱 png_export 파일명 규칙)로 만들어
+ * zip 하나로 저장한다. PNG 는 이미 압축돼 있어 store(level 0)로 묶는다.
+ * fflate 는 동적 import 로 초기 번들에서 제외.
  */
-export async function exportSheetsToPng(
+export async function exportSheetsToPngZip(
   svgs: SVGSVGElement[],
   headers: string[],
-): Promise<number> {
-  let saved = 0;
+  zipFileName: string,
+): Promise<SaveFileResult> {
+  const { zipSync } = await import('fflate');
+  const files: Record<string, Uint8Array> = {};
   for (let i = 0; i < svgs.length; i++) {
     const blob = await sheetSvgToPngBlob(svgs[i], headers[i] ?? '');
-    downloadBlob(blob, `cutmaster-sheet-${i + 1}.png`);
-    saved++;
-    // 연속 다운로드가 씹히지 않게 짧은 간격.
-    await new Promise((r) => setTimeout(r, 250));
+    files[`cutmaster-sheet-${i + 1}.png`] = new Uint8Array(await blob.arrayBuffer());
   }
-  return saved;
+  const zipped = zipSync(files, { level: 0 });
+  const zipBlob = new Blob([zipped as BlobPart], { type: 'application/zip' });
+  return saveDataToFile(
+    zipBlob,
+    zipFileName,
+    { description: 'ZIP 압축 파일', accept: { 'application/zip': ['.zip'] } },
+    'application/zip',
+  );
 }

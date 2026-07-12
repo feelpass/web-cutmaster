@@ -5,7 +5,7 @@ import type { CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
 import { colorPresetById } from '@/lib/colorPresets';
-import { exportSheetsToPng } from '@/lib/sheetImageExport';
+import { exportSheetsToPngZip } from '@/lib/sheetImageExport';
 import { SheetSvg } from './SheetSvg';
 
 interface Props {
@@ -45,7 +45,8 @@ export function ResultPane({ project, plan, calculating }: Props) {
             : '';
         return `시트 ${i + 1} / ${plan.sheets.length} · ${s.sheetLength.toFixed(0)} × ${s.sheetWidth.toFixed(0)} mm${material} · 효율 ${sheetUsedPercent(s).toFixed(1)}%`;
       });
-      await exportSheetsToPng(svgs, headers);
+      const zipName = `${project.name.trim() !== '' ? project.name.trim() : 'cutmaster'}-시트.zip`;
+      await exportSheetsToPngZip(svgs, headers, zipName);
     } catch (e) {
       alert(`이미지 저장 실패: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -112,7 +113,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
           onClick={savePng}
           disabled={savingPng}
           className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50 disabled:opacity-50"
-          title="시트별 PNG 이미지 파일로 저장 (cutmaster-sheet-N.png)"
+          title="시트별 PNG 이미지를 zip 하나로 저장 (cutmaster-sheet-N.png)"
         >
           {savingPng ? '저장 중…' : '이미지 저장'}
         </button>
