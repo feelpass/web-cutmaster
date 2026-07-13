@@ -2,6 +2,7 @@
 // CSV / XLSX / XLSM 파일에서 부품 행을 읽어 CutPart[] 로 변환한다.
 // 첫 행은 헤더로 가정하며, 컬럼명은 대소문자를 무시하고 매칭한다.
 // 컬럼 규약: PART, W, D, T, MATERIAL, GRAIN, QTY, ARTICLE, EDGE1~4, FILE, GROOVE
+// 엣지 컬럼은 W1/W2/D1/D2 헤더도 지원 — W1/W2는 상·하(EDGE1~2, W 방향), D1/D2는 좌·우(EDGE3~4, D 방향).
 
 import type { CutPart, GrainDirection } from './models';
 import { createCutPart, genId } from './models';
@@ -90,10 +91,10 @@ function mapRow(cells: string[], idx: Record<string, number>): ParsedPartRow | n
     qty: Math.max(1, Math.round(numOr(cell(cells, idx['QTY']), 1))),
     article: cell(cells, idx['ARTICLE']),
     edges: [
-      cell(cells, idx['EDGE1']),
-      cell(cells, idx['EDGE2']),
-      cell(cells, idx['EDGE3']),
-      cell(cells, idx['EDGE4']),
+      cell(cells, idx['EDGE1'] ?? idx['W1']),
+      cell(cells, idx['EDGE2'] ?? idx['W2']),
+      cell(cells, idx['EDGE3'] ?? idx['D1']),
+      cell(cells, idx['EDGE4'] ?? idx['D2']),
     ],
     fileName: cell(cells, idx['FILE']),
     groove: cell(cells, idx['GROOVE']),
