@@ -150,4 +150,17 @@ describe('toCutParts', () => {
     expect(p.fileName).toBe('door.dxf');
     expect(p.groove).toBe('G6');
   });
+
+  test('W1/W2/D1/D2 엣지 헤더도 지원한다 — W1/W2→상·하, D1/D2→좌·우', () => {
+    const rows = parsePartMatrix([
+      ['PART', 'W', 'D', 'T', 'MATERIAL', 'GRAIN', 'QTY', 'ARTICLE', 'W1', 'D1', 'W2', 'D2'],
+      ['측판', '1000', '390', '18', '화이트_18T', '0', '20', '', '화이트1T', '', '화이트1T', ''],
+      ['천지판', '800', '390', '18', '화이트_18T', '0', '10', '', '화이트1T', '화이트1T', '화이트1T', '화이트1T'],
+    ]);
+    const parts = toCutParts(rows);
+    // 측판: W1·W2 만 → edges[0](상)·edges[1](하)에 W 방향 엣지.
+    expect(parts[0].edges).toEqual(['화이트1T', '화이트1T', '', '']);
+    // 천지판: 4면 모두.
+    expect(parts[1].edges).toEqual(['화이트1T', '화이트1T', '화이트1T', '화이트1T']);
+  });
 });
