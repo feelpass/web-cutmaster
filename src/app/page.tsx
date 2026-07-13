@@ -9,11 +9,20 @@ import { PrintReport } from '@/components/PrintReport';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { ResultPane } from '@/components/ResultPane';
 import { useAuth } from '@/lib/auth-context';
-import { saveProjectToCloud } from '@/lib/cloud';
+import { listCloudProjects, saveProjectToCloud } from '@/lib/cloud';
 import { createProject, genId, type CuttingPlan, type Project } from '@/lib/domain/models';
-import { loadLocalProject, saveLocalProject, saveProjectToLocal } from '@/lib/localStore';
+import {
+  listLocalProjects,
+  loadLocalProject,
+  loadLocalProjectById,
+  saveLocalProject,
+  saveProjectToLocal,
+} from '@/lib/localStore';
 import { saveProjectFile } from '@/lib/projectFile';
 import { useSolver } from '@/lib/solver/useSolver';
+
+/** 마이그레이션 제안을 거절한 브라우저에서 다시 묻지 않기 위한 플래그. */
+const MIGRATION_DISMISS_KEY = 'cutmaster.cloudMigrationDismissed';
 
 export default function Home() {
   const { user, enabled: cloudEnabled } = useAuth();
@@ -49,6 +58,49 @@ export default function Home() {
       if (saveTimer.current != null) clearTimeout(saveTimer.current);
     };
   }, [project]);
+
+  // 로그인 시 클라우드에 없는 로컬 프로젝트가 있으면 업로드 제안 (거절하면 다시 묻지 않음).
+  const migrationCheckedUid = useRef<string | null>(null);
+  useEffect(() => {
+    if (!cloudEnabled || user == null) {
+      migrationCheckedUid.current = null;
+      return;
+    }
+    if (migrationCheckedUid.current === user.uid) return;
+    migrationCheckedUid.current = user.uid;
+    let active = true;
+    void (async () => {
+      try {
+        if (localStorage.getItem(MIGRATION_DISMISS_KEY) != null) return;
+        const locals = listLocalProjects();
+        if (locals.length === 0) return;
+        const cloudIds = new Set((await listCloudProjects(user.uid)).map((c) => c.id));
+        if (!active) return;
+        const targets = locals.filter((l) => !cloudIds.has(l.id));
+        if (targets.length === 0) return;
+        if (!confirm(`이 브라우저에 저장된 프로젝트 ${targets.length}개를 클라우드로 올릴까요?`)) {
+          localStorage.setItem(MIGRATION_DISMISS_KEY, '1');
+          return;
+        }
+        let uploaded = 0;
+        for (const meta of targets) {
+          if (!active) return;
+          const p = loadLocalProjectById(meta.id);
+          if (p == null) continue;
+          await saveProjectToCloud(user.uid, p);
+          uploaded += 1;
+        }
+        if (!active) return;
+        setSaveStatus(`로컬 프로젝트 ${uploaded}개를 클라우드로 올렸습니다`);
+      } catch (e) {
+        if (!active) return;
+        alert(`클라우드로 올리기 실패: ${e instanceof Error ? e.message : e}`);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [cloudEnabled, user]);
 
   const update = useCallback((patch: Partial<Project>) => {
     setProject((p) =>
