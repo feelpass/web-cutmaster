@@ -35,6 +35,9 @@ export default function Home() {
   const [showProjectsDialog, setShowProjectsDialog] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // 좌(입력)/우(결과) 분할 비율(%) — 데스크톱(lg+)에서만 적용, 드래그로 조절.
+  const [leftPct, setLeftPct] = useState(50);
+  const splitRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +104,30 @@ export default function Home() {
       active = false;
     };
   }, [cloudEnabled, user]);
+
+  /** 분할선 드래그 — 창 기준 마우스 X로 좌측 비율(20~80%)을 갱신. */
+  const startSplitDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const main = splitRef.current;
+    if (main == null) return;
+    const rect = main.getBoundingClientRect();
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setLeftPct(Math.min(80, Math.max(20, pct)));
+    };
+    const onUp = () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const update = useCallback((patch: Partial<Project>) => {
     setProject((p) =>
@@ -251,9 +278,12 @@ export default function Home() {
         <AuthButton />
       </header>
 
-      {/* 본문 — 좌 입력 / 우 결과 */}
-      <main className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <div className="lg:w-[440px] xl:w-[480px] shrink-0 lg:border-r border-line flex flex-col min-h-0">
+      {/* 본문 — 좌 입력 / 우 결과 (기본 50:50, 분할선 드래그로 조절) */}
+      <main ref={splitRef} className="flex-1 min-h-0 flex flex-col lg:flex-row">
+        <div
+          className="shrink-0 flex flex-col min-h-0 lg:w-[var(--left-pct)]"
+          style={{ '--left-pct': `${leftPct}%` } as React.CSSProperties}
+        >
           <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-3 space-y-3">
             <PartsTable
               parts={project.parts}
@@ -277,6 +307,13 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        {/* 분할선 — 데스크톱에서 드래그로 좌우 폭 조절 */}
+        <div
+          className="hidden lg:block w-1 shrink-0 cursor-col-resize bg-line hover:bg-accent/60 active:bg-accent"
+          onMouseDown={startSplitDrag}
+          title="드래그하여 좌우 크기 조절"
+        />
 
         <div className="flex-1 min-w-0 lg:overflow-y-auto p-4 flex flex-col">
           <ResultPane project={project} plan={plan} calculating={calculating} />

@@ -187,6 +187,8 @@ export interface Project {
   headcutBottom: number;
   headcutLeft: number;
   headcutRight: number;
+  /** 엣지 여유 치수 (mm) — 엣지 한 개소당 양끝에 이만큼씩 더해 소요량을 계산. */
+  edgeMargin: number;
 }
 
 /** 자동 자재 도출 시 사용되는 표준 자재 크기. */
@@ -216,6 +218,7 @@ export function createProject(id: string, name: string): Project {
     headcutBottom: 0,
     headcutLeft: 0,
     headcutRight: 0,
+    edgeMargin: 30,
   };
 }
 
@@ -336,6 +339,7 @@ export function projectToJson(p: Project): Json {
     headcutBottom: p.headcutBottom,
     headcutLeft: p.headcutLeft,
     headcutRight: p.headcutRight,
+    edgeMargin: p.edgeMargin,
   };
 }
 
@@ -362,5 +366,6 @@ export function projectFromJson(j: Json): Project {
     headcutBottom: (j.headcutBottom as number | undefined) ?? 0,
     headcutLeft: (j.headcutLeft as number | undefined) ?? 0,
     headcutRight: (j.headcutRight as number | undefined) ?? 0,
+    edgeMargin: (j.edgeMargin as number | undefined) ?? 30,
   };
 }

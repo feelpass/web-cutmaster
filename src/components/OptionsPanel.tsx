@@ -39,6 +39,7 @@ export function OptionsPanel({ project, onChange }: Props) {
       <div className="p-3 flex flex-col gap-3">
         <div className="flex items-center gap-5 flex-wrap">
           {numberField('톱날 두께(mm)', project.kerf, (n) => onChange({ kerf: n }))}
+          {numberField('엣지 여유 치수(mm)', project.edgeMargin, (n) => onChange({ edgeMargin: n }))}
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
               type="checkbox"

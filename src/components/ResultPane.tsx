@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import type { CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
+import { edgeUsagesFromParts } from '@/lib/domain/edgeBanding';
 import { colorPresetById } from '@/lib/colorPresets';
 import { exportSheetsToPngZip } from '@/lib/sheetImageExport';
 import { SheetSvg } from './SheetSvg';
@@ -73,6 +74,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
   }
 
   const summary = planSummaryFromPlan(plan, (id) => colorPresetById(id)?.name ?? null);
+  const edgeUsages = edgeUsagesFromParts(project.parts, project.edgeMargin);
   const headcut = {
     top: project.headcutTop,
     bottom: project.headcutBottom,
@@ -128,8 +130,8 @@ export function ResultPane({ project, plan, calculating }: Props) {
         </div>
       )}
 
-      {/* 재료 목록 + 부품 그룹 — 데스크톱 result_summary_panel 대응 */}
-      {(summary.materialUsages.length > 0 || summary.partGroups.length > 0) && (
+      {/* 재료 목록 + 엣지 소요량 + 부품 그룹 — 데스크톱 result_summary_panel 대응 */}
+      {(summary.materialUsages.length > 0 || edgeUsages.length > 0 || summary.partGroups.length > 0) && (
         <div className="flex gap-4 flex-wrap items-start">
           {summary.materialUsages.length > 0 && (
             <div className="min-w-56">
@@ -151,6 +153,33 @@ export function ResultPane({ project, plan, calculating }: Props) {
                       <td className="px-2 py-1 text-right tabular-nums">{m.sheetCount}</td>
                       <td className="px-2 py-1 text-right tabular-nums">
                         {(m.usedAreaMm2 / 1e6).toFixed(3)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {edgeUsages.length > 0 && (
+            <div className="min-w-56">
+              <p className="text-xs font-medium text-muted mb-1">
+                엣지 {edgeUsages.length}종 (여유 {project.edgeMargin}mm 포함)
+              </p>
+              <table className="text-xs border border-line rounded overflow-hidden border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 text-muted">
+                    <th className="font-medium text-left px-2 py-1 border-b border-line">엣지 자재</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-12">개소</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-20">mm</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {edgeUsages.map((e) => (
+                    <tr key={e.name} className="border-b border-line/60 last:border-b-0">
+                      <td className="px-2 py-1">{e.name}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{e.pieceCount}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {Math.round(e.lengthMm).toLocaleString()}
                       </td>
                     </tr>
                   ))}
@@ -190,7 +219,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
         </div>
       )}
 
-      <div ref={gridRef} className="grid gap-5 grid-cols-1 xl:grid-cols-2">
+      <div ref={gridRef} className="grid gap-5 grid-cols-1">
         {plan.sheets.map((s, i) => {
           const first = s.placed[0]?.part;
           const materialName =
