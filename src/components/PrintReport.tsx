@@ -7,6 +7,7 @@
 import type { CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
+import { edgeUsagesFromParts } from '@/lib/domain/edgeBanding';
 import { colorPresetById } from '@/lib/colorPresets';
 import { SheetSvg } from './SheetSvg';
 
@@ -16,6 +17,7 @@ const tdNum = `${td} text-right`;
 
 export function PrintReport({ project, plan }: { project: Project; plan: CuttingPlan }) {
   const summary = planSummaryFromPlan(plan, (id) => colorPresetById(id)?.name ?? null);
+  const edgeUsages = edgeUsagesFromParts(project.parts, project.edgeMargin);
   const dateStr = new Date().toISOString().substring(0, 10);
   const headcut = {
     top: project.headcutTop,
@@ -58,6 +60,30 @@ export function PrintReport({ project, plan }: { project: Project; plan: Cutting
             ))}
           </tbody>
         </table>
+
+        {edgeUsages.length > 0 && (
+          <>
+            <h2 className="mt-4 text-sm font-bold">엣지 (여유 {project.edgeMargin}mm 포함)</h2>
+            <table className="mt-1.5 border-collapse">
+              <thead>
+                <tr>
+                  <th className={th}>엣지 자재</th>
+                  <th className={th}>개소</th>
+                  <th className={th}>필요 길이 (mm)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {edgeUsages.map((e) => (
+                  <tr key={e.name}>
+                    <td className={td}>{e.name}</td>
+                    <td className={tdNum}>{e.pieceCount}</td>
+                    <td className={tdNum}>{Math.round(e.lengthMm).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
 
         <h2 className="mt-4 text-sm font-bold">부품</h2>
         <table className="mt-1.5 border-collapse">

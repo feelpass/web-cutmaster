@@ -22,6 +22,28 @@ const GRAIN_LABELS: Record<GrainDirection, string> = {
 };
 
 const MATERIAL_DATALIST_ID = 'cutmaster-material-names';
+const EDGE_DATALIST_ID = 'cutmaster-edge-names';
+
+/** edges [상, 하, 좌, 우] 의 면 코드 — 임포트 헤더(W1/W2/D1/D2)와 동일한 표기. */
+const EDGE_FACES = [
+  { code: 'W1', side: '상' },
+  { code: 'W2', side: '하' },
+  { code: 'D1', side: '좌' },
+  { code: 'D2', side: '우' },
+] as const;
+
+/** 4면 엣지를 한 셀에 압축 표기. 예: '화이트1T(4면)', '화이트1T(W1·W2)'. 상세는 title 툴팁으로. */
+function edgeSummary(edges: CutPart['edges']): { text: string; title: string } {
+  const faces = EDGE_FACES.map((f, i) => ({ f: f.code, name: edges[i] })).filter((e) => e.name !== '');
+  if (faces.length === 0) return { text: '', title: '' };
+  const byName = new Map<string, string[]>();
+  for (const { f, name } of faces) byName.set(name, [...(byName.get(name) ?? []), f]);
+  const text = [...byName.entries()]
+    .map(([name, fs]) => `${name}(${fs.length === 4 ? '4면' : fs.join('·')})`)
+    .join(', ');
+  const title = faces.map(({ f, name }) => `${f}: ${name}`).join('\n');
+  return { text, title };
+}
 
 /**
  * 자재 이름 텍스트 입력 셀 — 원본 MaterialNameInput 대응.
@@ -96,6 +118,8 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
     imported: CutPart[];
     article: string;
   } | null>(null);
+  /** 엣지 설정 다이얼로그가 열린 부품 인덱스. */
+  const [edgeEditIdx, setEdgeEditIdx] = useState<number | null>(null);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -181,6 +205,9 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
   const inputCls =
     'w-full bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:bg-indigo-50/50 rounded';
 
+  // 엣지 입력 자동완성 — 현재 부품들에 쓰인 엣지 자재명.
+  const edgeNames = [...new Set(parts.flatMap((p) => p.edges).filter((n) => n !== ''))];
+
   return (
     <section className="bg-surface border border-line rounded-lg overflow-hidden">
       <header className="flex items-center justify-between px-3 py-2 border-b border-line">
@@ -244,16 +271,23 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
               <option key={c.id} value={c.name} />
             ))}
           </datalist>
-          <table className="w-full text-sm border-collapse">
+          <datalist id={EDGE_DATALIST_ID}>
+            {edgeNames.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          {/* table-fixed + 비율 폭 — 부품명이 남는 공간을 독식하지 않게 컬럼별로 배분. */}
+          <table className="w-full min-w-[560px] text-sm border-collapse table-fixed">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
-                <th className="font-medium text-left px-2 py-1.5 min-w-20">부품명</th>
-                <th className="font-medium text-right px-2 py-1.5 w-20">가로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-20">세로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-14">수량</th>
-                <th className="font-medium text-right px-2 py-1.5 w-14">두께</th>
-                <th className="font-medium text-left px-2 py-1.5 w-18">결</th>
-                <th className="font-medium text-left px-2 py-1.5 w-28">자재</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[17%]">부품명</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[13%]">가로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[13%]">세로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[9%]">수량</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[9%]">두께</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[12%]">결</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[15%]">자재</th>
+                <th className="font-medium text-left px-2 py-1.5">엣지</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -327,6 +361,22 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
                       onChange={(id) => updateRow(i, { colorPresetId: id })}
                     />
                   </td>
+                  {(() => {
+                    const e = edgeSummary(p.edges);
+                    return (
+                      <td className="px-1">
+                        <button
+                          onClick={() => setEdgeEditIdx(i)}
+                          className={`w-full text-left text-xs px-1 py-1.5 rounded hover:bg-indigo-50/50 truncate ${
+                            e.text === '' ? 'text-muted' : ''
+                          }`}
+                          title={e.title !== '' ? e.title : '엣지 설정'}
+                        >
+                          {e.text === '' ? '설정' : e.text}
+                        </button>
+                      </td>
+                    );
+                  })()}
                   <td>
                     <button
                       onClick={() => removeRow(i)}
@@ -340,6 +390,49 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* 엣지 설정 다이얼로그 — 면(W1/W2/D1/D2)별 엣지 자재를 입력 */}
+      {edgeEditIdx != null && parts[edgeEditIdx] != null && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-sm flex flex-col">
+            <header className="px-4 py-3 border-b border-line">
+              <h2 className="text-sm font-semibold">
+                엣지 설정
+                {parts[edgeEditIdx].label !== '' ? ` — ${parts[edgeEditIdx].label}` : ''}
+              </h2>
+              <p className="mt-0.5 text-xs text-muted">
+                W1·W2는 가로(W) 방향, D1·D2는 세로(D) 방향 엣지입니다. 비우면 엣지 없음.
+              </p>
+            </header>
+            <div className="p-4 grid grid-cols-2 gap-3">
+              {EDGE_FACES.map(({ code, side }, ei) => (
+                <label key={code} className="text-xs text-muted flex flex-col gap-1">
+                  {code} ({side})
+                  <input
+                    className="border border-line rounded-md px-2 py-1.5 text-sm bg-surface text-foreground focus:outline-none focus:border-accent"
+                    list={EDGE_DATALIST_ID}
+                    value={parts[edgeEditIdx].edges[ei]}
+                    placeholder="없음"
+                    onChange={(e) => {
+                      const edges = [...parts[edgeEditIdx].edges] as CutPart['edges'];
+                      edges[ei] = e.target.value;
+                      updateRow(edgeEditIdx, { edges });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            <footer className="px-4 py-3 border-t border-line flex justify-end">
+              <button
+                onClick={() => setEdgeEditIdx(null)}
+                className="text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover"
+              >
+                완료
+              </button>
+            </footer>
+          </div>
         </div>
       )}
 
