@@ -300,14 +300,14 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
           <table className="w-full min-w-[560px] text-sm border-collapse table-fixed">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
-                <th className="font-medium text-left px-2 py-1.5 w-[15%]">부품명</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[11%]">가로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[11%]">세로</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[16%]">부품명</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[12%]">가로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[12%]">세로</th>
                 <th className="font-medium text-right px-2 py-1.5 w-[8%]">수량</th>
                 <th className="font-medium text-right px-2 py-1.5 w-[8%]">두께</th>
                 <th className="font-medium text-left px-2 py-1.5 w-[11%]">결</th>
                 <th className="font-medium text-left px-2 py-1.5 w-[13%]">자재</th>
-                <th className="font-medium text-left px-2 py-1.5">엣지</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[20%]">엣지</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -324,40 +324,52 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className={`${inputCls} text-right`}
                       value={p.length}
-                      min={1}
                       onChange={(e) => updateRow(i, { length: num(e.target.value, p.length) })}
+                      onBlur={(e) => {
+                        e.currentTarget.value = String(p.length);
+                      }}
                     />
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className={`${inputCls} text-right`}
                       value={p.width}
-                      min={1}
                       onChange={(e) => updateRow(i, { width: num(e.target.value, p.width) })}
+                      onBlur={(e) => {
+                        e.currentTarget.value = String(p.width);
+                      }}
                     />
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       className={`${inputCls} text-right`}
                       value={p.qty}
-                      min={1}
                       onChange={(e) =>
                         updateRow(i, { qty: Math.max(1, Math.round(num(e.target.value, p.qty))) })
                       }
+                      onBlur={(e) => {
+                        e.currentTarget.value = String(p.qty);
+                      }}
                     />
                   </td>
                   <td>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className={`${inputCls} text-right`}
                       value={p.thickness}
-                      min={1}
                       onChange={(e) => updateRow(i, { thickness: num(e.target.value, p.thickness) })}
+                      onBlur={(e) => {
+                        e.currentTarget.value = String(p.thickness);
+                      }}
                     />
                   </td>
                   <td>
