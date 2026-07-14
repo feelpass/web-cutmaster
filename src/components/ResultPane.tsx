@@ -170,7 +170,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
                   <tr className="bg-zinc-50 text-muted">
                     <th className="font-medium text-left px-2 py-1 border-b border-line">엣지 자재</th>
                     <th className="font-medium text-right px-2 py-1 border-b border-line w-12">개소</th>
-                    <th className="font-medium text-right px-2 py-1 border-b border-line w-20">mm</th>
+                    <th className="font-medium text-right px-2 py-1 border-b border-line w-20">m</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -179,7 +179,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
                       <td className="px-2 py-1">{e.name}</td>
                       <td className="px-2 py-1 text-right tabular-nums">{e.pieceCount}</td>
                       <td className="px-2 py-1 text-right tabular-nums">
-                        {Math.round(e.lengthMm).toLocaleString()}
+                        {(Math.ceil(e.lengthMm / 100) / 10).toFixed(1)}
                       </td>
                     </tr>
                   ))}
