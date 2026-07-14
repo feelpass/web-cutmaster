@@ -242,13 +242,13 @@ export default function Home() {
     <>
     <div className="flex flex-col min-h-dvh lg:h-dvh print:hidden">
       {/* 상단 바 */}
-      <header className="h-13 shrink-0 border-b border-line bg-surface flex items-center gap-3 px-4">
+      <header className="min-h-13 lg:h-13 shrink-0 border-b border-line bg-surface flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-2 px-4 py-2 lg:py-0">
         <h1 className="text-sm font-bold tracking-tight flex items-center gap-1.5">
           <span className="inline-block w-4 h-4 rounded-sm bg-accent" aria-hidden />
           CutMaster
         </h1>
         <input
-          className="text-sm font-medium bg-transparent border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 w-52 focus:outline-none"
+          className="text-sm font-medium bg-transparent border border-transparent hover:border-line focus:border-accent rounded-md px-2 py-1 flex-1 min-w-0 lg:flex-none lg:w-52 focus:outline-none"
           value={project.name}
           onChange={(e) => update({ name: e.target.value })}
           placeholder="프로젝트 이름"
@@ -260,7 +260,7 @@ export default function Home() {
           새 프로젝트
         </button>
 
-        <div className="flex-1" />
+        <div className="hidden lg:block flex-1" />
 
         {saveStatus != null && <span className="text-xs text-muted">{saveStatus}</span>}
         <button
