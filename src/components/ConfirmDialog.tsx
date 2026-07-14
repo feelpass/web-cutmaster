@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type ConfirmOptions = {
   title: string;
@@ -23,29 +23,35 @@ export function useConfirm() {
     resolve: (v: boolean) => void;
   } | null>(null);
 
+  // 최신 state를 stable한 close에서 참조하기 위한 ref (effect에서 동기화).
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   const confirm = useCallback(
     (opts: ConfirmOptions) =>
       new Promise<boolean>((resolve) => setState({ opts, resolve })),
     [],
   );
 
-  const close = (result: boolean) => {
-    if (state != null) {
-      state.resolve(result);
+  const close = useCallback((result: boolean) => {
+    if (stateRef.current != null) {
+      stateRef.current.resolve(result);
       setState(null);
     }
-  };
+  }, []);
 
+  // Esc → 취소. Enter는 전역으로 가로채지 않고, 포커스된 버튼의 기본 동작에 맡긴다
+  // (열릴 때 autoFocus로 포커스를 다이얼로그 안으로 옮긴다).
   useEffect(() => {
     if (state == null) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close(false);
-      else if (e.key === 'Enter') close(true);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  }, [state, close]);
 
   const dialog =
     state == null ? null : (
@@ -60,12 +66,14 @@ export function useConfirm() {
           <footer className="px-4 py-3 border-t border-line flex justify-end gap-1">
             <button
               onClick={() => close(false)}
+              autoFocus={state.opts.danger === true}
               className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-md hover:bg-zinc-100"
             >
               {state.opts.cancelLabel ?? '취소'}
             </button>
             <button
               onClick={() => close(true)}
+              autoFocus={state.opts.danger !== true}
               className={`text-xs px-3 py-1.5 rounded-md text-white ${
                 state.opts.danger
                   ? 'bg-red-600 hover:bg-red-700'
