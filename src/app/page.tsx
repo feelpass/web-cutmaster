@@ -8,6 +8,7 @@ import { PartsTable } from '@/components/PartsTable';
 import { PrintReport } from '@/components/PrintReport';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { ResultPane } from '@/components/ResultPane';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { useAuth } from '@/lib/auth-context';
 import { listCloudProjects, saveProjectToCloud } from '@/lib/cloud';
 import { createProject, genId, type CuttingPlan, type Project } from '@/lib/domain/models';
@@ -27,6 +28,7 @@ const MIGRATION_DISMISS_KEY = 'cutmaster.cloudMigrationDismissed';
 export default function Home() {
   const { user, enabled: cloudEnabled } = useAuth();
   const solve = useSolver();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // SSR 하이드레이션 불일치 방지 — 클라이언트에서 localStorage 복원 후 렌더.
   const [project, setProject] = useState<Project | null>(null);
@@ -81,10 +83,17 @@ export default function Home() {
         if (!active) return;
         const targets = locals.filter((l) => !cloudIds.has(l.id));
         if (targets.length === 0) return;
-        if (!confirm(`이 브라우저에 저장된 프로젝트 ${targets.length}개를 클라우드로 올릴까요?`)) {
+        if (
+          !(await confirm({
+            title: '클라우드로 올릴까요?',
+            message: `이 브라우저에 저장된 프로젝트 ${targets.length}개를 클라우드로 올립니다.`,
+            confirmLabel: '올리기',
+          }))
+        ) {
           localStorage.setItem(MIGRATION_DISMISS_KEY, '1');
           return;
         }
+        if (!active) return;
         let uploaded = 0;
         for (const meta of targets) {
           if (!active) return;
@@ -103,7 +112,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [cloudEnabled, user]);
+  }, [cloudEnabled, user, confirm]);
 
   /** 분할선 드래그 — 창 기준 마우스 X로 좌측 비율(20~80%)을 갱신. */
   const startSplitDrag = (e: React.MouseEvent) => {
@@ -147,9 +156,16 @@ export default function Home() {
     }
   };
 
-  const newProject = () => {
+  const newProject = async () => {
     if (project != null && project.parts.length > 0) {
-      if (!confirm('현재 프로젝트를 비우고 새 프로젝트를 시작할까요? (클라우드에 저장하지 않은 변경은 사라집니다)')) {
+      if (
+        !(await confirm({
+          title: '새 프로젝트를 시작할까요?',
+          message: '현재 프로젝트를 비우고 새 프로젝트를 시작합니다. 클라우드에 저장하지 않은 변경은 사라집니다.',
+          confirmLabel: '새로 시작',
+          danger: true,
+        }))
+      ) {
         return;
       }
     }
@@ -336,6 +352,7 @@ export default function Home() {
 
     {/* PDF 저장(인쇄) 시에만 보이는 리포트 — 요약 + 시트별 페이지 */}
     {plan != null && <PrintReport project={project} plan={plan} />}
+    {confirmDialog}
     </>
   );
 }

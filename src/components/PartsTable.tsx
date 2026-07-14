@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CutPart, GrainDirection } from '@/lib/domain/models';
 import { createCutPart, genId } from '@/lib/domain/models';
 import { importPartsFromFile } from '@/lib/domain/partsImport';
@@ -14,6 +14,7 @@ import {
 } from '@/lib/domain/partsMerge';
 import { argbToCss } from '@/lib/domain/presets';
 import { allColorPresets, colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
+import { useConfirm } from './ConfirmDialog';
 
 const GRAIN_LABELS: Record<GrainDirection, string> = {
   none: '없음',
@@ -120,6 +121,16 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
   } | null>(null);
   /** 엣지 설정 다이얼로그가 열린 부품 인덱스. */
   const [edgeEditIdx, setEdgeEditIdx] = useState<number | null>(null);
+  const { confirm, dialog } = useConfirm();
+
+  useEffect(() => {
+    if (edgeEditIdx == null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEdgeEditIdx(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [edgeEditIdx]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -218,8 +229,17 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
         <div className="flex gap-1">
           {parts.length > 0 && (
             <button
-              onClick={() => {
-                if (confirm('부품을 전체 삭제할까요?')) onChange([]);
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: '부품을 전체 삭제할까요?',
+                    message: `부품 ${parts.length}개가 모두 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`,
+                    confirmLabel: '전체 삭제',
+                    danger: true,
+                  })
+                ) {
+                  onChange([]);
+                }
               }}
               className="text-xs text-muted hover:text-red-600 px-2 py-1 rounded hover:bg-red-50"
             >
@@ -280,13 +300,13 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
           <table className="w-full min-w-[560px] text-sm border-collapse table-fixed">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
-                <th className="font-medium text-left px-2 py-1.5 w-[17%]">부품명</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[13%]">가로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[13%]">세로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[9%]">수량</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[9%]">두께</th>
-                <th className="font-medium text-left px-2 py-1.5 w-[12%]">결</th>
-                <th className="font-medium text-left px-2 py-1.5 w-[15%]">자재</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[15%]">부품명</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[11%]">가로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[11%]">세로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[8%]">수량</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[8%]">두께</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[11%]">결</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[13%]">자재</th>
                 <th className="font-medium text-left px-2 py-1.5">엣지</th>
                 <th className="w-8" />
               </tr>
@@ -379,7 +399,19 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
                   })()}
                   <td>
                     <button
-                      onClick={() => removeRow(i)}
+                      onClick={async () => {
+                        const p = parts[i];
+                        if (
+                          await confirm({
+                            title: '행을 삭제할까요?',
+                            message: `${p.label !== '' ? p.label : '이름 없는 부품'} ${p.length.toFixed(0)}×${p.width.toFixed(0)} 행을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`,
+                            confirmLabel: '삭제',
+                            danger: true,
+                          })
+                        ) {
+                          removeRow(i);
+                        }
+                      }}
                       className="text-muted hover:text-red-600 px-2 py-1"
                       title="행 삭제"
                     >
@@ -435,6 +467,8 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
           </div>
         </div>
       )}
+
+      {dialog}
 
       {/* 중복 부품 머지 다이얼로그 — 데스크톱 parts_merge_dialog 대응 */}
       {merge != null && (
