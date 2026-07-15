@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CutPart, GrainDirection } from '@/lib/domain/models';
 import { createCutPart, genId } from '@/lib/domain/models';
 import { importPartsFromFile } from '@/lib/domain/partsImport';
@@ -14,7 +14,7 @@ import {
 } from '@/lib/domain/partsMerge';
 import { argbToCss } from '@/lib/domain/presets';
 import { allColorPresets, colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
-import { useConfirm } from './ConfirmDialog';
+import { useDialogKeys } from './useDialogKeys';
 
 const GRAIN_LABELS: Record<GrainDirection, string> = {
   none: '없음',
@@ -121,16 +121,19 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
   } | null>(null);
   /** 엣지 설정 다이얼로그가 열린 부품 인덱스. */
   const [edgeEditIdx, setEdgeEditIdx] = useState<number | null>(null);
-  const { confirm, dialog } = useConfirm();
 
-  useEffect(() => {
-    if (edgeEditIdx == null) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setEdgeEditIdx(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [edgeEditIdx]);
+  // 엣지 설정: Enter → 완료, ESC → 닫기.
+  useDialogKeys({
+    active: edgeEditIdx != null,
+    onConfirm: () => setEdgeEditIdx(null),
+    onClose: () => setEdgeEditIdx(null),
+  });
+  // 머지: Enter → 덮어쓰기(오른쪽 버튼), ESC → 취소.
+  useDialogKeys({
+    active: merge != null,
+    onConfirm: () => handleMergeAction('overwrite'),
+    onClose: () => handleMergeAction('cancel'),
+  });
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -229,17 +232,8 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
         <div className="flex gap-1">
           {parts.length > 0 && (
             <button
-              onClick={async () => {
-                if (
-                  await confirm({
-                    title: '부품을 전체 삭제할까요?',
-                    message: `부품 ${parts.length}개가 모두 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`,
-                    confirmLabel: '전체 삭제',
-                    danger: true,
-                  })
-                ) {
-                  onChange([]);
-                }
+              onClick={() => {
+                if (confirm('부품을 전체 삭제할까요?')) onChange([]);
               }}
               className="text-xs text-muted hover:text-red-600 px-2 py-1 rounded hover:bg-red-50"
             >
@@ -411,19 +405,7 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
                   })()}
                   <td>
                     <button
-                      onClick={async () => {
-                        const p = parts[i];
-                        if (
-                          await confirm({
-                            title: '행을 삭제할까요?',
-                            message: `${p.label !== '' ? p.label : '이름 없는 부품'} ${p.length.toFixed(0)}×${p.width.toFixed(0)} 행을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`,
-                            confirmLabel: '삭제',
-                            danger: true,
-                          })
-                        ) {
-                          removeRow(i);
-                        }
-                      }}
+                      onClick={() => removeRow(i)}
                       className="text-muted hover:text-red-600 px-2 py-1"
                       title="행 삭제"
                     >
@@ -440,7 +422,7 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
       {/* 엣지 설정 다이얼로그 — 면(W1/W2/D1/D2)별 엣지 자재를 입력 */}
       {edgeEditIdx != null && parts[edgeEditIdx] != null && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-sm flex flex-col">
+          <div data-dialog className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-sm flex flex-col">
             <header className="px-4 py-3 border-b border-line">
               <h2 className="text-sm font-semibold">
                 엣지 설정
@@ -480,12 +462,10 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
         </div>
       )}
 
-      {dialog}
-
       {/* 중복 부품 머지 다이얼로그 — 데스크톱 parts_merge_dialog 대응 */}
       {merge != null && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-md flex flex-col">
+          <div data-dialog className="bg-surface rounded-xl border border-line shadow-xl w-full max-w-md flex flex-col">
             <header className="px-4 py-3 border-b border-line">
               <h2 className="text-sm font-semibold">중복 부품이 있습니다</h2>
             </header>
