@@ -1485,6 +1485,106 @@ function frPlace(
   }
 }
 
+/**
+ * free-rect 시트 후처리 — 세로 풀컷 슬라이스 재배열.
+ *
+ * free-rect 그리디는 빈 사각형의 좌하단부터 채우므로 회전된 낱개 부품이 동일
+ * 기둥들 "사이"에 끼는 배치가 나온다 (예: 1000 기둥 | 390 회전 | 1000 기둥).
+ * 부품이 없는 세로 풀컷 라인으로 시트를 슬라이스로 분해한 뒤 폭 내림차순
+ * (동률 시 원래 순서)으로 재배열한다 — 같은 폭 기둥이 이웃하고 좁은(회전)
+ * 슬라이스가 오른쪽 끝으로 밀려 리핑 순서가 단순해진다. 슬라이스 순서만
+ * 바뀌므로 효율·겹침·guillotine 유효성은 불변.
+ */
+function reorderVerticalSlices(
+  placedIn: PlacedPart[],
+  leftoversIn: LeftoverRect[],
+  sheetLength: number,
+): { placed: PlacedPart[]; leftovers: LeftoverRect[] } {
+  const EPS = 1e-6;
+  const none = { placed: placedIn, leftovers: leftoversIn };
+  if (placedIn.length === 0) return none;
+
+  // 1) 부품 x-구간을 병합해 슬라이스 구간을 얻는다.
+  const spans = placedIn
+    .map((p) => {
+      const len = p.rotated ? p.part.width : p.part.length;
+      return { start: p.x, end: p.x + len };
+    })
+    .sort((a, b) => a.start - b.start);
+  const slices: { start: number; end: number }[] = [];
+  for (const s of spans) {
+    const last = slices[slices.length - 1];
+    if (last != null && s.start <= last.end + EPS) {
+      if (s.end > last.end) last.end = s.end;
+    } else {
+      slices.push({ start: s.start, end: s.end });
+    }
+  }
+  if (slices.length < 2) return none;
+
+  // 2) 새 순서: 폭 내림차순, 동률이면 원래 인덱스 순 유지.
+  const order = slices.map((_, i) => i);
+  order.sort((a, b) => {
+    const wa = slices[a].end - slices[a].start;
+    const wb = slices[b].end - slices[b].start;
+    if (Math.abs(wa - wb) > EPS) return wb - wa;
+    return a - b;
+  });
+  if (order.every((si, pos) => si === pos)) return none;
+
+  // 3) 슬라이스 앞의 gap(풀컷 여백) 폭은 시퀀스 위치를 유지한 채 새 좌표를
+  //    누적 계산한다. 전체 폭 합이 보존되므로 마지막 슬라이스 뒤(trailing)는
+  //    이동량 0.
+  const gaps: number[] = [];
+  {
+    let prevEnd = 0;
+    for (const sl of slices) {
+      gaps.push(sl.start - prevEnd);
+      prevEnd = sl.end;
+    }
+  }
+  // 원좌표 영역 → 이동량. gap·슬라이스·trailing이 [0, sheetLength]를 분할한다.
+  const regions: { start: number; end: number; d: number }[] = [];
+  let newX = 0;
+  for (let pos = 0; pos < order.length; pos++) {
+    const gapStart = slices[pos].start - gaps[pos];
+    regions.push({ start: gapStart, end: slices[pos].start, d: newX - gapStart });
+    newX += gaps[pos];
+    const si = order[pos];
+    regions.push({ start: slices[si].start, end: slices[si].end, d: newX - slices[si].start });
+    newX += slices[si].end - slices[si].start;
+  }
+  regions.push({ start: slices[slices.length - 1].end, end: sheetLength, d: 0 });
+
+  const deltaAt = (x: number): number => {
+    for (const r of regions) {
+      if (x >= r.start - EPS && x < r.end + EPS) return r.d;
+    }
+    return 0;
+  };
+
+  // 4) 부품 이동 — 각 부품은 정확히 한 슬라이스 안에 있다. 경계값 EPS 오매칭을
+  //    피하려고 부품 중점으로 영역을 찾는다.
+  const placed = placedIn.map((p) => {
+    const len = p.rotated ? p.part.width : p.part.length;
+    return { ...p, x: p.x + deltaAt(p.x + len / 2) };
+  });
+
+  // 5) 자투리는 영역 경계에서 분할해 조각별로 소속 영역과 함께 이동.
+  const leftovers: LeftoverRect[] = [];
+  for (const r of leftoversIn) {
+    const rEnd = r.x + r.width;
+    for (const reg of regions) {
+      const s = Math.max(r.x, reg.start);
+      const e = Math.min(rEnd, reg.end);
+      if (e - s > 1) {
+        leftovers.push({ x: s + reg.d, y: r.y, width: e - s, height: r.height });
+      }
+    }
+  }
+  return { placed, leftovers };
+}
+
 function materializeFreeRect(
   sheets: FRSheet[],
   stock: StockSheet,
@@ -1495,13 +1595,14 @@ function materializeFreeRect(
   let used = 0;
   for (const sh of sheets) {
     if (sh.placed.length === 0) continue;
-    const leftovers: LeftoverRect[] = [];
+    const rawLeftovers: LeftoverRect[] = [];
     for (const r of sh.free) {
-      if (r.w > 1 && r.h > 1) leftovers.push({ x: r.x, y: r.y, width: r.w, height: r.h });
+      if (r.w > 1 && r.h > 1) rawLeftovers.push({ x: r.x, y: r.y, width: r.w, height: r.h });
     }
+    const { placed, leftovers } = reorderVerticalSlices([...sh.placed], rawLeftovers, stock.length);
     layouts.push({
       stockSheetId: stock.id,
-      placed: [...sh.placed],
+      placed,
       sheetLength: stock.length,
       sheetWidth: stock.width,
       cutSequence: null,
