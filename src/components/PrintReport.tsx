@@ -69,7 +69,7 @@ export function PrintReport({ project, plan }: { project: Project; plan: Cutting
                 <tr>
                   <th className={th}>엣지 자재</th>
                   <th className={th}>개소</th>
-                  <th className={th}>필요 길이 (mm)</th>
+                  <th className={th}>필요 길이 (m)</th>
                 </tr>
               </thead>
               <tbody>
@@ -77,7 +77,7 @@ export function PrintReport({ project, plan }: { project: Project; plan: Cutting
                   <tr key={e.name}>
                     <td className={td}>{e.name}</td>
                     <td className={tdNum}>{e.pieceCount}</td>
-                    <td className={tdNum}>{Math.round(e.lengthMm).toLocaleString()}</td>
+                    <td className={tdNum}>{(Math.ceil(e.lengthMm / 100) / 10).toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>
