@@ -263,6 +263,31 @@ describe('TreeSearchSolver — grain 혼재 통일 (grain mix)', () => {
   });
 });
 
+describe('TreeSearchSolver — free-rect 슬라이스 재배열 (회전 부품 오른쪽 정렬)', () => {
+  test('측판 1000×390 ×20 → 3시트, 회전 부품은 각 시트 맨 오른쪽 기둥', () => {
+    const stocks = [createStockSheet({ id: 's1', length: 2440, width: 1220, qty: 999 })];
+    const parts = [createCutPart({ id: 'p1', length: 1000, width: 390, qty: 20, label: '측판' })];
+    const plan = solver.solve({ stocks, parts, kerf: 3, grainLocked: false });
+
+    expect(plan.unplaced).toHaveLength(0);
+    expect(plan.sheets, '면적 하한 = 3시트 (7+7+6)').toHaveLength(3);
+
+    for (let i = 0; i < plan.sheets.length; i++) {
+      const s = plan.sheets[i];
+      expectNoOverlap(s.placed);
+      expectWithinBounds(s.placed, 2440, 1220);
+      // 회전(세로) 부품은 모든 정방향 부품보다 오른쪽에 있어야 한다.
+      const maxNormalEnd = Math.max(
+        ...s.placed.filter((p) => !p.rotated).map((p) => p.x + drawLength(p)),
+      );
+      for (const p of s.placed.filter((p) => p.rotated)) {
+        expect(p.x, `시트 ${i + 1}: 회전 부품이 정방향 기둥들 사이에 끼어 있음`)
+          .toBeGreaterThanOrEqual(maxNormalEnd);
+      }
+    }
+  });
+});
+
 describe('TreeSearchSolver — 순수 시트 (tidiness)', () => {
   test('효율이 같으면 부품 종류를 시트에 섞지 않는다 (763/263 분리)', () => {
     const stock = createStockSheet({ id: 's', length: 2434, width: 1211, qty: 999, label: '23T' });
