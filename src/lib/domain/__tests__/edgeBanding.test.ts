@@ -48,4 +48,17 @@ describe('edgeUsagesFromParts', () => {
     expect(usages[0].lengthMm).toBe(1000);
     expect(edgeUsagesFromParts([parts[2]], 30)).toEqual([]);
   });
+
+  test('같은 엣지 자재라도 부품 두께가 다르면 별도 항목으로 구분한다', () => {
+    const parts = [
+      part({ length: 1000, width: 390, qty: 1, thickness: 18, edges: ['화이트1T', '', '', ''] }),
+      part({ length: 800, width: 390, qty: 1, thickness: 23, edges: ['화이트1T', '', '', ''] }),
+    ];
+    const usages = edgeUsagesFromParts(parts, 0);
+    expect(usages).toHaveLength(2);
+    expect(usages.map((u) => [u.name, u.thickness, u.lengthMm])).toEqual([
+      ['화이트1T', 18, 1000],
+      ['화이트1T', 23, 800],
+    ]);
+  });
 });
