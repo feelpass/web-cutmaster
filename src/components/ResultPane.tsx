@@ -175,8 +175,8 @@ export function ResultPane({ project, plan, calculating }: Props) {
                 </thead>
                 <tbody>
                   {edgeUsages.map((e) => (
-                    <tr key={e.name} className="border-b border-line/60 last:border-b-0">
-                      <td className="px-2 py-1">{e.name}</td>
+                    <tr key={`${e.name}|${e.thickness}`} className="border-b border-line/60 last:border-b-0">
+                      <td className="px-2 py-1">{e.name} {e.thickness}mm</td>
                       <td className="px-2 py-1 text-right tabular-nums">{e.pieceCount}</td>
                       <td className="px-2 py-1 text-right tabular-nums">
                         {(Math.ceil(e.lengthMm / 100) / 10).toFixed(1)}

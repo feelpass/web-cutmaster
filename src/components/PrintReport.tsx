@@ -74,8 +74,8 @@ export function PrintReport({ project, plan }: { project: Project; plan: Cutting
               </thead>
               <tbody>
                 {edgeUsages.map((e) => (
-                  <tr key={e.name}>
-                    <td className={td}>{e.name}</td>
+                  <tr key={`${e.name}|${e.thickness}`}>
+                    <td className={td}>{e.name} {e.thickness}mm</td>
                     <td className={tdNum}>{e.pieceCount}</td>
                     <td className={tdNum}>{(Math.ceil(e.lengthMm / 100) / 10).toFixed(1)}</td>
                   </tr>

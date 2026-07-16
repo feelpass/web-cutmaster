@@ -15,7 +15,7 @@ import {
   type LocalProjectMeta,
 } from '@/lib/localStore';
 import { readProjectFile } from '@/lib/projectFile';
-import { useConfirm } from './ConfirmDialog';
+import { useDialogKeys } from './useDialogKeys';
 
 interface Props {
   /** 로그인한 사용자 uid. null이면 클라우드 섹션 숨김. */
@@ -68,7 +68,9 @@ export function ProjectsDialog({ uid, onOpenProject, onClose }: Props) {
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { confirm, dialog } = useConfirm();
+
+  // 목록형 다이얼로그 — Enter 기본 액션은 없고 ESC로 닫기만.
+  useDialogKeys({ active: true, onConfirm: null, onClose });
 
   const refreshCloud = useCallback(async () => {
     if (uid == null) return;
@@ -111,7 +113,6 @@ export function ProjectsDialog({ uid, onOpenProject, onClose }: Props) {
   };
 
   return (
-    <>
     <div
       className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
       onClick={onClose}
@@ -146,16 +147,8 @@ export function ProjectsDialog({ uid, onOpenProject, onClose }: Props) {
                 if (p != null) onOpenProject(p);
                 else alert('프로젝트를 불러올 수 없습니다.');
               }}
-              onDelete={async () => {
-                if (
-                  !(await confirm({
-                    title: '프로젝트를 삭제할까요?',
-                    message: `"${it.name}" 프로젝트를 이 브라우저에서 삭제합니다. 이 작업은 되돌릴 수 없습니다.`,
-                    confirmLabel: '삭제',
-                    danger: true,
-                  }))
-                )
-                  return;
+              onDelete={() => {
+                if (!confirm(`"${it.name}" 프로젝트를 이 브라우저에서 삭제할까요?`)) return;
                 deleteLocalProject(it.id);
                 setLocalItems(listLocalProjects());
               }}
@@ -193,15 +186,7 @@ export function ProjectsDialog({ uid, onOpenProject, onClose }: Props) {
                     }
                   }}
                   onDelete={async () => {
-                    if (
-                      !(await confirm({
-                        title: '프로젝트를 삭제할까요?',
-                        message: `"${it.name}" 프로젝트를 클라우드에서 삭제합니다. 이 작업은 되돌릴 수 없습니다.`,
-                        confirmLabel: '삭제',
-                        danger: true,
-                      }))
-                    )
-                      return;
+                    if (!confirm(`"${it.name}" 프로젝트를 클라우드에서 삭제할까요?`)) return;
                     setBusy(true);
                     try {
                       await deleteCloudProject(uid, it.id);
@@ -241,7 +226,5 @@ export function ProjectsDialog({ uid, onOpenProject, onClose }: Props) {
         </footer>
       </div>
     </div>
-    {dialog}
-    </>
   );
 }
