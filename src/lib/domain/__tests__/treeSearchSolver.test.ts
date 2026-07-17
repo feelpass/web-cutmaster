@@ -288,6 +288,42 @@ describe('TreeSearchSolver — free-rect 슬라이스 재배열 (회전 부품 �
   });
 });
 
+describe('TreeSearchSolver — 2-stage strip 재배열 (소수 방향 오른쪽 정렬)', () => {
+  test('600×400 ×13 (2745×1220) → 가로로 눕힌 부품 strip이 맨 오른쪽', () => {
+    const stocks = [createStockSheet({ id: 's1', length: 2745, width: 1220, qty: 999 })];
+    const parts = [createCutPart({ id: 'p1', length: 600, width: 400, qty: 13, label: 'P' })];
+    const plan = solver.solve({ stocks, parts, kerf: 3, grainLocked: false });
+
+    expect(plan.unplaced).toHaveLength(0);
+    expect(plan.sheets).toHaveLength(1);
+    const s = plan.sheets[0];
+    expect(s.cutSequence, '2-stage 해 (strip-cut)').not.toBeNull();
+    expectNoOverlap(s.placed);
+    expectWithinBounds(s.placed, 2745, 1220);
+
+    // 세로(회전) 10개 + 가로 눕힘 3개 혼합 배치.
+    const landscape = s.placed.filter((p) => drawLength(p) > drawWidth(p));
+    const portrait = s.placed.filter((p) => drawLength(p) < drawWidth(p));
+    expect(portrait).toHaveLength(10);
+    expect(landscape).toHaveLength(3);
+
+    // 소수 방향(가로 눕힘) 부품은 모든 세로 기둥보다 오른쪽에 있어야 한다.
+    const maxPortraitEnd = Math.max(...portrait.map((p) => p.x + drawLength(p)));
+    for (const p of landscape) {
+      expect(p.x, '가로 눕힘 부품이 세로 기둥들 사이에 끼어 있음').toBeGreaterThanOrEqual(
+        maxPortraitEnd,
+      );
+    }
+
+    // cutSequence의 strip 순서도 좌표와 일치 — 마지막 strip이 가로 부품 strip(폭 600).
+    const strips = s.cutSequence!.strips;
+    expect(strips[strips.length - 1].width).toBe(600);
+    for (let i = 1; i < strips.length; i++) {
+      expect(strips[i].offset).toBeGreaterThan(strips[i - 1].offset);
+    }
+  });
+});
+
 describe('TreeSearchSolver — 순수 시트 (tidiness)', () => {
   test('효율이 같으면 부품 종류를 시트에 섞지 않는다 (763/263 분리)', () => {
     const stock = createStockSheet({ id: 's', length: 2434, width: 1211, qty: 999, label: '23T' });
