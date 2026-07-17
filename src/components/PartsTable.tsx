@@ -12,7 +12,13 @@ import {
   type MergeAction,
   type PartsMergeConflict,
 } from '@/lib/domain/partsMerge';
-import { colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
+import { argbToCss } from '@/lib/domain/presets';
+import {
+  allColorPresets,
+  colorPresetById,
+  findOrCreateColorByName,
+  setColorPresetArgb,
+} from '@/lib/colorPresets';
 import type { StockMaterial } from '@/lib/stockMaterials';
 import { useDialogKeys } from './useDialogKeys';
 
@@ -23,6 +29,7 @@ const GRAIN_LABELS: Record<GrainDirection, string> = {
 };
 
 const EDGE_DATALIST_ID = 'cutmaster-edge-names';
+const MATERIAL_DATALIST_ID = 'cutmaster-material-names';
 
 /** edges [상, 하, 좌, 우] 의 면 코드 — 임포트 헤더(W1/W2/D1/D2)와 동일한 표기. */
 const EDGE_FACES = [
@@ -43,6 +50,78 @@ function edgeSummary(edges: CutPart['edges']): { text: string; title: string } {
     .join(', ');
   const title = faces.map(({ f, name }) => `${f}: ${name}`).join('\n');
   return { text, title };
+}
+
+/**
+ * 자재 이름 텍스트 입력 셀 — 원본 MaterialNameInput 대응.
+ * 확정(blur/Enter) 시: 빈 문자열 → null, 기존 프리셋 이름 일치 → 그 id,
+ * 일치 없음 → 프리셋 자동 생성 후 새 id.
+ */
+function MaterialCell({
+  colorPresetId,
+  onChange,
+}: {
+  colorPresetId: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const preset = colorPresetById(colorPresetId);
+  const [text, setText] = useState(preset?.name ?? '');
+
+  // colorPresetId가 밖에서 바뀌면(임포트·행 교체) 입력 텍스트를 동기화.
+  const [prevId, setPrevId] = useState(colorPresetId);
+  if (prevId !== colorPresetId) {
+    setPrevId(colorPresetId);
+    setText(preset?.name ?? '');
+  }
+
+  const commit = () => {
+    // 표시 중인 이름과 같으면 변경 없음 — 이름 미해석(id만 아는) 프리셋도 보존.
+    if (text.trim() === (preset?.name ?? '')) return;
+    onChange(findOrCreateColorByName(text));
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      {preset != null ? (
+        <label
+          className="relative w-3.5 h-3.5 rounded-sm border border-black/10 shrink-0 cursor-pointer"
+          style={{ background: argbToCss(preset.argb) }}
+          title={`${preset.name} 색상 변경`}
+        >
+          <input
+            type="color"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            value={argbToCss(preset.argb)}
+            onChange={(e) => {
+              const argb = (0xff000000 | parseInt(e.target.value.slice(1), 16)) >>> 0;
+              setColorPresetArgb(preset.id, argb);
+              // 같은 id 를 다시 넣어 parts 를 갱신 — 표·결과·인쇄가 새 색으로 다시 그려진다.
+              onChange(colorPresetId);
+            }}
+          />
+        </label>
+      ) : (
+        <span
+          className="w-3.5 h-3.5 rounded-sm border border-black/10 shrink-0"
+          style={{
+            background: 'repeating-linear-gradient(45deg,#e5e7eb 0 3px,#fff 3px 6px)',
+          }}
+          title="자동 색상 — 자재명을 입력하면 색을 바꿀 수 있습니다"
+        />
+      )}
+      <input
+        className="w-full bg-transparent py-1.5 text-sm focus:outline-none focus:bg-indigo-50/50 rounded"
+        list={MATERIAL_DATALIST_ID}
+        value={text}
+        placeholder="자동"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
+    </div>
+  );
 }
 
 interface Props {
@@ -227,23 +306,29 @@ export function PartsTable({ parts, onChange, materials, projectName = '', onArt
         </p>
       ) : (
         <div className="overflow-x-auto">
+          <datalist id={MATERIAL_DATALIST_ID}>
+            {allColorPresets().map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
+          </datalist>
           <datalist id={EDGE_DATALIST_ID}>
             {edgeNames.map((n) => (
               <option key={n} value={n} />
             ))}
           </datalist>
           {/* table-fixed + 비율 폭 — 부품명이 남는 공간을 독식하지 않게 컬럼별로 배분. */}
-          <table className="w-full min-w-[560px] text-sm border-collapse table-fixed">
+          <table className="w-full min-w-[640px] text-sm border-collapse table-fixed">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
-                <th className="font-medium text-left px-2 py-1.5 w-[16%]">부품명</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[12%]">가로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[12%]">세로</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[8%]">수량</th>
-                <th className="font-medium text-right px-2 py-1.5 w-[8%]">두께</th>
-                <th className="font-medium text-left px-2 py-1.5 w-[11%]">결</th>
-                <th className="font-medium text-left px-2 py-1.5 w-[13%]">자재</th>
-                <th className="font-medium text-left px-2 py-1.5 w-[20%]">엣지</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[14%]">부품명</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[10%]">가로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[10%]">세로</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[7%]">수량</th>
+                <th className="font-medium text-right px-2 py-1.5 w-[7%]">두께</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[9%]">결</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[13%]">자재명</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[14%]">원자재 사이즈</th>
+                <th className="font-medium text-left px-2 py-1.5 w-[16%]">엣지</th>
                 <th className="w-8" />
               </tr>
             </thead>
@@ -322,6 +407,12 @@ export function PartsTable({ parts, onChange, materials, projectName = '', onArt
                         </option>
                       ))}
                     </select>
+                  </td>
+                  <td>
+                    <MaterialCell
+                      colorPresetId={p.colorPresetId}
+                      onChange={(id) => updateRow(i, { colorPresetId: id })}
+                    />
                   </td>
                   <td>
                     <select
