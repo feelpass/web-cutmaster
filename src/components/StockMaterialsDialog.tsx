@@ -72,7 +72,7 @@ export function StockMaterialsDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-4 py-3 border-b border-line flex items-center justify-between">
-          <h2 className="text-sm font-semibold">자재 관리 — 원장 규격</h2>
+          <h2 className="text-sm font-semibold">원장 자재 사이즈 관리</h2>
           <button onClick={onClose} className="text-muted hover:text-foreground px-2">
             ×
           </button>
