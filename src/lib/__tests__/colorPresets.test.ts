@@ -5,8 +5,10 @@ import { describe, expect, test } from 'vitest';
 import {
   attachColorPresets,
   colorPresetById,
+  extraColorPresets,
   findOrCreateColorByName,
   registerColorPresetsFromJson,
+  setColorPresetArgb,
 } from '../colorPresets';
 
 describe('findOrCreateColorByName', () => {
@@ -17,6 +19,12 @@ describe('findOrCreateColorByName', () => {
 
   test('seed 프리셋 이름과 일치하면 그 id', () => {
     expect(findOrCreateColorByName('백색멜라민')).toBe('cp_white_mel');
+  });
+
+  test('웹 추가 내장 프리셋(오크·화이트 등) 이름과 일치하면 그 id', () => {
+    expect(findOrCreateColorByName('오크')).toBe('cpw_oak');
+    expect(findOrCreateColorByName('화이트')).toBe('cpw_white');
+    expect(findOrCreateColorByName('MDF')).toBe('cpw_mdf');
   });
 
   test('없는 이름은 프리셋을 자동 생성하고, 같은 이름은 같은 id 를 재사용', () => {
@@ -48,6 +56,13 @@ describe('attachColorPresets / registerColorPresetsFromJson', () => {
     expect('colorPresets' in json).toBe(false);
   });
 
+  test('웹 추가 내장 id 도 JSON 등록에서 건너뛴다', () => {
+    registerColorPresetsFromJson({
+      colorPresets: [{ id: 'cpw_oak', name: '변조시도', argb: 0 }],
+    });
+    expect(colorPresetById('cpw_oak')?.name).toBe('오크');
+  });
+
   test('seed id 와 잘못된 항목은 등록하지 않는다', () => {
     registerColorPresetsFromJson({
       colorPresets: [
@@ -57,5 +72,30 @@ describe('attachColorPresets / registerColorPresetsFromJson', () => {
       ],
     });
     expect(colorPresetById('cp_white_mel')?.name).toBe('백색멜라민');
+  });
+});
+
+describe('setColorPresetArgb', () => {
+  test('내장 프리셋은 오버라이드로 색이 바뀌고, 기본색으로 돌리면 원복된다', () => {
+    const original = extraColorPresets.find((c) => c.id === 'cpw_walnut')!.argb;
+    setColorPresetArgb('cpw_walnut', 0xff112233);
+    expect(colorPresetById('cpw_walnut')?.argb).toBe(0xff112233);
+    expect(colorPresetById('cpw_walnut')?.name).toBe('월넛');
+    setColorPresetArgb('cpw_walnut', original);
+    expect(colorPresetById('cpw_walnut')?.argb).toBe(original);
+  });
+
+  test('커스텀 프리셋은 항목 자체가 갱신된다', () => {
+    const id = findOrCreateColorByName('현장특주LPM')!;
+    setColorPresetArgb(id, 0xffabcdef);
+    expect(colorPresetById(id)?.argb).toBe(0xffabcdef);
+    // 저장 시 동봉되는 색도 갱신된 값이어야 한다.
+    const json = attachColorPresets({}, [{ colorPresetId: id }]);
+    expect(json.colorPresets).toEqual([{ id, name: '현장특주LPM', argb: 0xffabcdef }]);
+  });
+
+  test('모르는 id 는 무시한다', () => {
+    setColorPresetArgb('cp_no_such', 0xff000000);
+    expect(colorPresetById('cp_no_such')).toBeNull();
   });
 });
