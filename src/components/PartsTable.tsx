@@ -335,6 +335,11 @@ export function PartsTable({ parts, onChange, materials, projectName = '', onArt
                       title="이 부품을 재단할 원장 자재 — Default는 왼쪽 위에서 선택한 자재를 따릅니다"
                     >
                       <option value="">Default</option>
+                      {/* 참조 자재가 삭제된 경우 — 선택값이 사라지지 않게 명시적으로 표기. */}
+                      {p.stockMaterialId != null &&
+                        !materials.some((m) => m.id === p.stockMaterialId) && (
+                          <option value={p.stockMaterialId}>알 수 없는 자재 (삭제됨)</option>
+                        )}
                       {materials.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name} ({m.length}×{m.width})

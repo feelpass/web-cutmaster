@@ -1591,7 +1591,7 @@ function reorderVerticalSlices(
   // 1) 부품 x-구간을 병합해 슬라이스 구간을 얻는다.
   const spans = placedIn
     .map((p) => {
-      const len = p.rotated ? p.part.width : p.part.length;
+      const len = drawLength(p);
       return { start: p.x, end: p.x + len };
     })
     .sort((a, b) => a.start - b.start);
@@ -1611,7 +1611,7 @@ function reorderVerticalSlices(
   let portraitTotal = 0;
   const sliceOri = slices.map(() => ({ landscape: 0, portrait: 0 }));
   for (const p of placedIn) {
-    const len = p.rotated ? p.part.width : p.part.length;
+    const len = drawLength(p);
     const mid = p.x + len / 2;
     const si = slices.findIndex((sl) => mid >= sl.start - EPS && mid <= sl.end + EPS);
     if (si < 0) continue;
@@ -1679,7 +1679,7 @@ function reorderVerticalSlices(
   // 5) 부품 이동 — 각 부품은 정확히 한 슬라이스 안에 있다. 경계값 EPS 오매칭을
   //    피하려고 부품 중점으로 영역을 찾는다.
   const placed = placedIn.map((p) => {
-    const len = p.rotated ? p.part.width : p.part.length;
+    const len = drawLength(p);
     return { ...p, x: p.x + deltaAt(p.x + len / 2) };
   });
 

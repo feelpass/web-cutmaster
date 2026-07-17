@@ -56,6 +56,11 @@ export function StockMaterialsDialog({
     onChanged();
   };
 
+  // 입력 필드에서 Enter로 바로 추가 (한글 IME 조합 중 Enter는 무시).
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) add();
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
@@ -124,6 +129,7 @@ export function StockMaterialsDialog({
               className="border border-line rounded-md px-2 py-1 text-sm bg-surface focus:outline-none focus:border-accent"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={onEnter}
               placeholder="예: 수입 PB 4×9"
             />
           </label>
@@ -135,6 +141,7 @@ export function StockMaterialsDialog({
               value={length}
               min={1}
               onChange={(e) => setLength(e.target.value)}
+              onKeyDown={onEnter}
               placeholder="2745"
             />
           </label>
@@ -146,6 +153,7 @@ export function StockMaterialsDialog({
               value={width}
               min={1}
               onChange={(e) => setWidth(e.target.value)}
+              onKeyDown={onEnter}
               placeholder="1220"
             />
           </label>

@@ -37,6 +37,7 @@ function isStockMaterial(v: unknown): v is StockMaterial {
 
 function loadCustom(): StockMaterial[] {
   if (customMaterials != null) return customMaterials;
+  if (typeof localStorage === 'undefined') return (customMaterials = []);
   try {
     const raw = localStorage.getItem(CUSTOM_KEY);
     const parsed: unknown = raw == null ? [] : JSON.parse(raw);
@@ -93,6 +94,7 @@ export function deleteStockMaterial(id: string): void {
 
 function loadDefaultId(): string {
   if (defaultId != null) return defaultId;
+  if (typeof localStorage === 'undefined') return seedStockMaterials[0].id;
   try {
     defaultId = localStorage.getItem(DEFAULT_ID_KEY) ?? seedStockMaterials[0].id;
   } catch {
