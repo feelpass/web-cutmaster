@@ -56,6 +56,7 @@ function edgeSummary(edges: CutPart['edges']): { text: string; title: string } {
  * 자재 이름 텍스트 입력 셀 — 원본 MaterialNameInput 대응.
  * 확정(blur/Enter) 시: 빈 문자열 → null, 기존 프리셋 이름 일치 → 그 id,
  * 일치 없음 → 프리셋 자동 생성 후 새 id.
+ * 사용처에서 key={colorPresetId}로 렌더 — id가 바뀌면(임포트·행 교체) 리마운트로 text가 리셋된다.
  */
 function MaterialCell({
   colorPresetId,
@@ -66,13 +67,6 @@ function MaterialCell({
 }) {
   const preset = colorPresetById(colorPresetId);
   const [text, setText] = useState(preset?.name ?? '');
-
-  // colorPresetId가 밖에서 바뀌면(임포트·행 교체) 입력 텍스트를 동기화.
-  const [prevId, setPrevId] = useState(colorPresetId);
-  if (prevId !== colorPresetId) {
-    setPrevId(colorPresetId);
-    setText(preset?.name ?? '');
-  }
 
   const commit = () => {
     // 표시 중인 이름과 같으면 변경 없음 — 이름 미해석(id만 아는) 프리셋도 보존.
@@ -410,6 +404,7 @@ export function PartsTable({ parts, onChange, materials, projectName = '', onArt
                   </td>
                   <td>
                     <MaterialCell
+                      key={p.colorPresetId ?? 'auto'}
                       colorPresetId={p.colorPresetId}
                       onChange={(id) => updateRow(i, { colorPresetId: id })}
                     />
