@@ -37,7 +37,7 @@ export function StockMaterialPanel({ materials, current, onSelect, onManage }: P
           className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50 shrink-0"
           title="원장 자재 규격을 추가/삭제하고 Default를 변경합니다"
         >
-          자재 관리
+          원장 자재 사이즈 관리
         </button>
       </div>
     </section>
