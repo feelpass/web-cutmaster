@@ -8,6 +8,8 @@ import { PartsTable } from '@/components/PartsTable';
 import { PrintReport } from '@/components/PrintReport';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { ResultPane } from '@/components/ResultPane';
+import { StockMaterialPanel } from '@/components/StockMaterialPanel';
+import { StockMaterialsDialog } from '@/components/StockMaterialsDialog';
 import { useAuth } from '@/lib/auth-context';
 import { listCloudProjects, saveProjectToCloud } from '@/lib/cloud';
 import { createProject, genId, type CuttingPlan, type Project } from '@/lib/domain/models';
@@ -20,6 +22,12 @@ import {
 } from '@/lib/localStore';
 import { saveProjectFile } from '@/lib/projectFile';
 import { useSolver } from '@/lib/solver/useSolver';
+import {
+  allStockMaterials,
+  getDefaultStockMaterial,
+  setDefaultStockMaterialId,
+  type StockMaterial,
+} from '@/lib/stockMaterials';
 
 /** 마이그레이션 제안을 거절한 브라우저에서 다시 묻지 않기 위한 플래그. */
 const MIGRATION_DISMISS_KEY = 'cutmaster.cloudMigrationDismissed';
@@ -33,6 +41,10 @@ export default function Home() {
   const [plan, setPlan] = useState<CuttingPlan | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [showProjectsDialog, setShowProjectsDialog] = useState(false);
+  const [showMaterialsDialog, setShowMaterialsDialog] = useState(false);
+  // 원장 자재 카탈로그 + Default 선택 — localStorage에서 복원 (SSR 회피로 effect에서 로드).
+  const [materials, setMaterials] = useState<StockMaterial[]>([]);
+  const [stockMaterial, setStockMaterial] = useState<StockMaterial | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // 좌(입력)/우(결과) 분할 비율(%) — 데스크톱(lg+)에서만 적용, 드래그로 조절.
@@ -45,6 +57,8 @@ export default function Home() {
     void Promise.resolve().then(() => {
       if (cancelled) return;
       setProject(loadLocalProject() ?? createProject(genId(), '새 프로젝트'));
+      setMaterials(allStockMaterials());
+      setStockMaterial(getDefaultStockMaterial());
     });
     return () => {
       cancelled = true;
@@ -139,7 +153,17 @@ export default function Home() {
     if (project == null || project.parts.length === 0 || calculating) return;
     setCalculating(true);
     try {
-      setPlan(await solve(project));
+      setPlan(
+        await solve(project, {
+          defaultSize:
+            stockMaterial != null
+              ? { length: stockMaterial.length, width: stockMaterial.width }
+              : undefined,
+          sizeById: Object.fromEntries(
+            materials.map((m) => [m.id, { length: m.length, width: m.width }]),
+          ),
+        }),
+      );
     } catch (e) {
       alert(`계산 실패: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -285,9 +309,21 @@ export default function Home() {
           style={{ '--left-pct': `${leftPct}%` } as React.CSSProperties}
         >
           <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-3 space-y-3">
+            {stockMaterial != null && (
+              <StockMaterialPanel
+                materials={materials}
+                current={stockMaterial}
+                onSelect={(m) => {
+                  setDefaultStockMaterialId(m.id);
+                  setStockMaterial(m);
+                }}
+                onManage={() => setShowMaterialsDialog(true)}
+              />
+            )}
             <PartsTable
               parts={project.parts}
               onChange={(parts) => update({ parts })}
+              materials={materials}
               projectName={project.name}
               onArticle={(article) => {
                 // 데스크톱과 동일: 프로젝트명이 비어있거나 기본값일 때만 ARTICLE 로 채움.
@@ -319,6 +355,23 @@ export default function Home() {
           <ResultPane project={project} plan={plan} calculating={calculating} />
         </div>
       </main>
+
+      {showMaterialsDialog && stockMaterial != null && (
+        <StockMaterialsDialog
+          materials={materials}
+          currentId={stockMaterial.id}
+          onSelectDefault={(m) => {
+            setDefaultStockMaterialId(m.id);
+            setStockMaterial(m);
+          }}
+          onChanged={() => {
+            setMaterials(allStockMaterials());
+            // 삭제로 Default가 되돌아간 경우 반영.
+            setStockMaterial(getDefaultStockMaterial());
+          }}
+          onClose={() => setShowMaterialsDialog(false)}
+        />
+      )}
 
       {showProjectsDialog && (
         <ProjectsDialog

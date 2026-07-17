@@ -9,6 +9,8 @@ import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
 import { edgeUsagesFromParts } from '@/lib/domain/edgeBanding';
 import { colorPresetById } from '@/lib/colorPresets';
+import { stockMaterialById } from '@/lib/stockMaterials';
+import { sheetMaterialLabel } from './ResultPane';
 import { SheetSvg } from './SheetSvg';
 
 const th = 'border border-zinc-400 bg-zinc-200 px-2 py-1 text-left font-semibold';
@@ -16,7 +18,11 @@ const td = 'border border-zinc-400 px-2 py-1';
 const tdNum = `${td} text-right`;
 
 export function PrintReport({ project, plan }: { project: Project; plan: CuttingPlan }) {
-  const summary = planSummaryFromPlan(plan, (id) => colorPresetById(id)?.name ?? null);
+  const summary = planSummaryFromPlan(
+    plan,
+    (id) => colorPresetById(id)?.name ?? null,
+    (id) => stockMaterialById(id)?.name ?? null,
+  );
   const edgeUsages = edgeUsagesFromParts(project.parts, project.edgeMargin);
   const dateStr = new Date().toISOString().substring(0, 10);
   const headcut = {
@@ -113,10 +119,7 @@ export function PrintReport({ project, plan }: { project: Project; plan: Cutting
       {/* 시트별 페이지 */}
       {plan.sheets.map((s, i) => {
         const first = s.placed[0]?.part;
-        const material =
-          first != null
-            ? ` · ${colorPresetById(first.colorPresetId)?.name ?? '기본'} ${first.thickness}T`
-            : '';
+        const material = first != null ? ` · ${sheetMaterialLabel(first)}` : '';
         return (
           <section key={i} className={i < plan.sheets.length - 1 ? 'break-after-page' : ''}>
             <p className="mb-1.5 text-zinc-700">

@@ -1,13 +1,22 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import type { CuttingPlan, Project } from '@/lib/domain/models';
+import type { CutPart, CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
 import { edgeUsagesFromParts } from '@/lib/domain/edgeBanding';
 import { colorPresetById } from '@/lib/colorPresets';
+import { stockMaterialById } from '@/lib/stockMaterials';
 import { exportSheetsToPngZip } from '@/lib/sheetImageExport';
 import { SheetSvg } from './SheetSvg';
+
+/** 시트 헤더용 자재 표기 — 색상명 두께T (+ 원장 자재명). */
+export function sheetMaterialLabel(first: CutPart): string {
+  const stock = stockMaterialById(first.stockMaterialId);
+  return `${colorPresetById(first.colorPresetId)?.name ?? '기본'} ${first.thickness}T${
+    stock != null ? ` · ${stock.name}` : ''
+  }`;
+}
 
 interface Props {
   project: Project;
@@ -40,10 +49,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
       const svgs = [...grid.querySelectorAll<SVGSVGElement>('figure svg')];
       const headers = plan.sheets.map((s, i) => {
         const first = s.placed[0]?.part;
-        const material =
-          first != null
-            ? ` · ${colorPresetById(first.colorPresetId)?.name ?? '기본'} ${first.thickness}T`
-            : '';
+        const material = first != null ? ` · ${sheetMaterialLabel(first)}` : '';
         return `시트 ${i + 1} / ${plan.sheets.length} · ${s.sheetLength.toFixed(0)} × ${s.sheetWidth.toFixed(0)} mm${material} · 효율 ${sheetUsedPercent(s).toFixed(1)}%`;
       });
       const zipName = `${project.name.trim() !== '' ? project.name.trim() : 'cutmaster'}-시트.zip`;
@@ -73,7 +79,11 @@ export function ResultPane({ project, plan, calculating }: Props) {
     );
   }
 
-  const summary = planSummaryFromPlan(plan, (id) => colorPresetById(id)?.name ?? null);
+  const summary = planSummaryFromPlan(
+    plan,
+    (id) => colorPresetById(id)?.name ?? null,
+    (id) => stockMaterialById(id)?.name ?? null,
+  );
   const edgeUsages = edgeUsagesFromParts(project.parts, project.edgeMargin);
   const headcut = {
     top: project.headcutTop,
@@ -222,16 +232,13 @@ export function ResultPane({ project, plan, calculating }: Props) {
       <div ref={gridRef} className="grid gap-5 grid-cols-1">
         {plan.sheets.map((s, i) => {
           const first = s.placed[0]?.part;
-          const materialName =
-            first != null
-              ? `${colorPresetById(first.colorPresetId)?.name ?? '기본'} ${first.thickness}T`
-              : '';
+          const materialName = first != null ? sheetMaterialLabel(first) : '';
           return (
             <figure key={i} className="min-w-0">
               <SheetSvg sheet={s} showLabels={project.showPartLabels} headcut={headcut} />
               <figcaption className="mt-1 text-xs text-muted flex justify-between">
                 <span>
-                  시트 {i + 1}
+                  시트 {i + 1} · {s.sheetLength.toFixed(0)}×{s.sheetWidth.toFixed(0)}
                   {materialName !== '' ? ` · ${materialName}` : ''}
                 </span>
                 <span>
