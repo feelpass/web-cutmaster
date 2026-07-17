@@ -199,6 +199,33 @@ describe('derivedStocks', () => {
   test('부품이 없으면 빈 배열', () => {
     expect(derivedStocks(createProject('id1', 't'))).toEqual([]);
   });
+
+  test('Default 원장 규격을 지정하면 그 크기로 도출 (예: 4×10자)', () => {
+    const project = createProject('id1', 't');
+    project.parts = [createCutPart({ id: 'p1', length: 100, width: 50, qty: 1 })];
+    const stocks = derivedStocks(project, { defaultSize: { length: 3050, width: 1220 } });
+    expect(stocks).toHaveLength(1);
+    expect(stocks[0].length).toBe(3050);
+    expect(stocks[0].width).toBe(1220);
+  });
+
+  test('부품별 stockMaterialId — 매핑된 규격 사용, 없거나 모르는 id는 Default 폴백', () => {
+    const project = createProject('id1', 't');
+    project.parts = [
+      createCutPart({ id: 'p1', length: 100, width: 50, qty: 1, stockMaterialId: 'sm_4x10' }),
+      createCutPart({ id: 'p2', length: 100, width: 50, qty: 1 }), // Default
+      createCutPart({ id: 'p3', length: 100, width: 50, qty: 1, stockMaterialId: 'unknown' }),
+    ];
+    const stocks = derivedStocks(project, {
+      defaultSize: { length: 2440, width: 1220 },
+      sizeById: { sm_4x10: { length: 3050, width: 1220 } },
+    });
+    // 같은 (색·두께)라도 stockMaterialId 가 다르면 별도 자재.
+    expect(stocks).toHaveLength(3);
+    expect(stocks[0].length).toBe(3050); // sm_4x10 매핑
+    expect(stocks[1].length).toBe(2440); // Default
+    expect(stocks[2].length).toBe(2440); // 모르는 id → Default 폴백
+  });
 });
 
 describe('CutPart 직렬화', () => {
@@ -206,6 +233,7 @@ describe('CutPart 직렬화', () => {
     const p = createCutPart({
       id: 'p1', length: 100.5, width: 50, qty: 3,
       label: '측판', grainDirection: 'lengthwise', colorPresetId: 'cp_red',
+      stockMaterialId: 'sm_4x9',
       thickness: 15, priority: 2, edges: ['E1', '', 'E1', 'E2'],
       fileName: 'door.dxf', groove: 'G4', memo: '메모',
     });
@@ -217,6 +245,7 @@ describe('CutPart 직렬화', () => {
     const j = cutPartToJson(p);
     expect('edges' in j).toBe(false);
     expect('colorPresetId' in j).toBe(false);
+    expect('stockMaterialId' in j).toBe(false);
     expect('fileName' in j).toBe(false);
     expect('groove' in j).toBe(false);
     expect('memo' in j).toBe(false);

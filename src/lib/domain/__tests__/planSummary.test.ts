@@ -59,9 +59,23 @@ describe('planSummaryFromPlan', () => {
     const s = planSummaryFromPlan(plan, colorName);
     expect(s.materialUsages).toHaveLength(2);
     // sheetCount 내림차순 — 빨강 자재 2장이 먼저.
-    expect(s.materialUsages[0]).toMatchObject({ id: 'cp_red|18', name: '빨강 18T', sheetCount: 2, usedAreaMm2: 2 * 500 * 400 });
-    expect(s.materialUsages[1]).toMatchObject({ id: '|18', name: '기본 18T', sheetCount: 1, usedAreaMm2: 300 * 200 });
+    expect(s.materialUsages[0]).toMatchObject({ id: 'cp_red|18|', name: '빨강 18T', sheetCount: 2, usedAreaMm2: 2 * 500 * 400 });
+    expect(s.materialUsages[1]).toMatchObject({ id: '|18|', name: '기본 18T', sheetCount: 1, usedAreaMm2: 300 * 200 });
     expect(s.totalUsedAreaMm2).toBe(2 * 500 * 400 + 300 * 200);
+  });
+
+  test('부품별 원장 자재 — stockMaterialId 별로 분리 집계하고 이름에 자재명 표기', () => {
+    const std = createCutPart({ id: 'p1', length: 500, width: 400, qty: 1 });
+    const big = createCutPart({ id: 'p2', length: 500, width: 400, qty: 1, stockMaterialId: 'sm_4x10' });
+    const plan: CuttingPlan = {
+      sheets: [sheetOf([std]), sheetOf([big])],
+      unplaced: [],
+      efficiencyPercent: 50,
+    };
+    const s = planSummaryFromPlan(plan, colorName, (id) => (id === 'sm_4x10' ? '4×10자' : null));
+    expect(s.materialUsages).toHaveLength(2);
+    const names = s.materialUsages.map((m) => m.name).sort();
+    expect(names).toEqual(['기본 18T', '기본 18T · 4×10자']);
   });
 
   test('cutSequence 없는 시트가 하나라도 있으면 cutsAreEstimated=true', () => {
