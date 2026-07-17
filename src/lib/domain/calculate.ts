@@ -1,15 +1,15 @@
 // cutmaster(Flutter) ui/providers/solver_provider.dart 의 runCalculate 로직 포팅.
 // 자재(color+두께)별 그룹핑 → 그룹마다 솔버 실행 → 헤드컷 오프셋 → 병합.
 
-import type { CutPart, CuttingPlan, LeftoverRect, PlacedPart, Project, SheetLayout, StockSheet } from './models';
-import { derivedStocks } from './models';
+import type { CutPart, CuttingPlan, LeftoverRect, PlacedPart, Project, SheetLayout, StockSheet, StockSizeConfig } from './models';
+import { derivedStocks, partMaterialKey } from './models';
 import { TreeSearchSolver, type TreeSearchSolverOptions } from './treeSearchSolver';
 
-/** (colorPresetId, thickness) 키별로 부품 그룹핑. */
+/** (colorPresetId, thickness, stockMaterialId) 키별로 부품 그룹핑. */
 function groupPartsByMaterial(parts: CutPart[]): Map<string, CutPart[]> {
   const out = new Map<string, CutPart[]>();
   for (const p of parts) {
-    const k = `${p.colorPresetId ?? ''}|${p.thickness}`;
+    const k = partMaterialKey(p);
     const list = out.get(k);
     if (list) {
       list.push(p);
@@ -20,7 +20,7 @@ function groupPartsByMaterial(parts: CutPart[]): Map<string, CutPart[]> {
   return out;
 }
 
-/** derivedStocks가 만든 stock id (`auto_<color>|<thickness>`)에서 키 추출. */
+/** derivedStocks가 만든 stock id (`auto_<color>|<thickness>|<stockMaterial>`)에서 키 추출. */
 function stockKey(s: StockSheet): string {
   if (s.id.startsWith('auto_')) return s.id.substring(5);
   return `${s.colorPresetId ?? ''}|`;
@@ -31,8 +31,12 @@ function stockKey(s: StockSheet): string {
  * 헤드컷이 설정되어 있으면 자재의 유효 영역을 줄여 솔버에 전달하고,
  * 결과 부품 좌표는 헤드컷 오프셋만큼 이동시켜 원본 시트 좌표계에 매핑한다.
  */
-export function calculatePlan(project: Project, solverOptions?: TreeSearchSolverOptions): CuttingPlan {
-  const allStocks = derivedStocks(project);
+export function calculatePlan(
+  project: Project,
+  solverOptions?: TreeSearchSolverOptions,
+  stockSizes?: StockSizeConfig,
+): CuttingPlan {
+  const allStocks = derivedStocks(project, stockSizes);
   const groups = groupPartsByMaterial(project.parts);
   const hcLeft = project.headcutLeft;
   const hcTop = project.headcutTop;
@@ -88,7 +92,7 @@ export function calculatePlan(project: Project, solverOptions?: TreeSearchSolver
       allSheets.push({
         stockSheetId: s.stockSheetId,
         placed: offsetPlaced,
-        // 시트 차원은 원본(2440×1220) 유지 — 헤드컷 음영 영역 시각 인식.
+        // 시트 차원은 원본 원장 크기 유지 — 헤드컷 음영 영역 시각 인식.
         sheetLength: groupStock.length,
         sheetWidth: groupStock.width,
         cutSequence: s.cutSequence,

@@ -32,6 +32,37 @@ describe('calculatePlan', () => {
     expect(plan.efficiencyPercent).toBeGreaterThan(0);
   });
 
+  test('Default 원장 규격 지정 — 4×10자(3050×1220)에는 2440 초과 부품도 배치된다', () => {
+    const project = projectWith([
+      createCutPart({ id: 'p1', length: 2900, width: 600, qty: 1, label: 'L' }),
+    ]);
+    // 기본(4×8자)에서는 배치 불가.
+    expect(calculatePlan(project).unplaced).toHaveLength(1);
+    // 4×10자 규격을 넘기면 배치된다.
+    const plan = calculatePlan(project, undefined, {
+      defaultSize: { length: 3050, width: 1220 },
+    });
+    expect(plan.unplaced).toHaveLength(0);
+    expect(plan.sheets).toHaveLength(1);
+    expect(plan.sheets[0].sheetLength).toBe(3050);
+    expect(plan.sheets[0].sheetWidth).toBe(1220);
+  });
+
+  test('부품별 원장 자재 — stockMaterialId 가 다른 부품은 각자 규격의 시트에 배치', () => {
+    const project = projectWith([
+      createCutPart({ id: 'pBig', length: 2900, width: 600, qty: 1, stockMaterialId: 'sm_4x10' }),
+      createCutPart({ id: 'pStd', length: 600, width: 400, qty: 1 }), // Default (4×8)
+    ]);
+    const plan = calculatePlan(project, undefined, {
+      sizeById: { sm_4x10: { length: 3050, width: 1220 } },
+    });
+    expect(plan.unplaced).toHaveLength(0);
+    expect(plan.sheets).toHaveLength(2);
+    const bySize = new Map(plan.sheets.map((s) => [s.sheetLength, s]));
+    expect(bySize.get(3050)?.placed.map((p) => p.part.id)).toEqual(['pBig']);
+    expect(bySize.get(2440)?.placed.map((p) => p.part.id)).toEqual(['pStd']);
+  });
+
   test('자재(두께)별로 그룹핑 — 시트끼리 부품이 섞이지 않음', () => {
     const project = projectWith([
       createCutPart({ id: 'p18', length: 600, width: 400, qty: 2, thickness: 18 }),

@@ -12,8 +12,8 @@ import {
   type MergeAction,
   type PartsMergeConflict,
 } from '@/lib/domain/partsMerge';
-import { argbToCss } from '@/lib/domain/presets';
-import { allColorPresets, colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
+import { colorPresetById, findOrCreateColorByName } from '@/lib/colorPresets';
+import type { StockMaterial } from '@/lib/stockMaterials';
 import { useDialogKeys } from './useDialogKeys';
 
 const GRAIN_LABELS: Record<GrainDirection, string> = {
@@ -22,7 +22,6 @@ const GRAIN_LABELS: Record<GrainDirection, string> = {
   widthwise: '세로',
 };
 
-const MATERIAL_DATALIST_ID = 'cutmaster-material-names';
 const EDGE_DATALIST_ID = 'cutmaster-edge-names';
 
 /** edges [상, 하, 좌, 우] 의 면 코드 — 임포트 헤더(W1/W2/D1/D2)와 동일한 표기. */
@@ -46,70 +45,18 @@ function edgeSummary(edges: CutPart['edges']): { text: string; title: string } {
   return { text, title };
 }
 
-/**
- * 자재 이름 텍스트 입력 셀 — 원본 MaterialNameInput 대응.
- * 확정(blur/Enter) 시: 빈 문자열 → null, 기존 프리셋 이름 일치 → 그 id,
- * 일치 없음 → 프리셋 자동 생성 후 새 id.
- */
-function MaterialCell({
-  colorPresetId,
-  onChange,
-}: {
-  colorPresetId: string | null;
-  onChange: (id: string | null) => void;
-}) {
-  const preset = colorPresetById(colorPresetId);
-  const [text, setText] = useState(preset?.name ?? '');
-
-  // colorPresetId가 밖에서 바뀌면(임포트·행 교체) 입력 텍스트를 동기화.
-  const [prevId, setPrevId] = useState(colorPresetId);
-  if (prevId !== colorPresetId) {
-    setPrevId(colorPresetId);
-    setText(preset?.name ?? '');
-  }
-
-  const commit = () => {
-    // 표시 중인 이름과 같으면 변경 없음 — 이름 미해석(id만 아는) 프리셋도 보존.
-    if (text.trim() === (preset?.name ?? '')) return;
-    onChange(findOrCreateColorByName(text));
-  };
-
-  return (
-    <div className="flex items-center gap-1.5 px-1">
-      <span
-        className="w-3.5 h-3.5 rounded-sm border border-black/10 shrink-0"
-        style={{
-          background:
-            preset != null
-              ? argbToCss(preset.argb)
-              : 'repeating-linear-gradient(45deg,#e5e7eb 0 3px,#fff 3px 6px)',
-        }}
-      />
-      <input
-        className="w-full bg-transparent py-1.5 text-sm focus:outline-none focus:bg-indigo-50/50 rounded"
-        list={MATERIAL_DATALIST_ID}
-        value={text}
-        placeholder="자동"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-        }}
-      />
-    </div>
-  );
-}
-
 interface Props {
   parts: CutPart[];
   onChange: (parts: CutPart[]) => void;
+  /** 자재 컬럼에서 선택할 수 있는 원장 자재 목록 (자재 관리와 동일). */
+  materials: StockMaterial[];
   /** CSV 내보내기의 ARTICLE 컬럼·기본 파일명에 쓰는 프로젝트명. */
   projectName?: string;
   /** 임포트 파일의 ARTICLE 값 — 데스크톱처럼 프로젝트명이 비어있으면 이걸로 채운다. */
   onArticle?: (article: string) => void;
 }
 
-export function PartsTable({ parts, onChange, projectName = '', onArticle }: Props) {
+export function PartsTable({ parts, onChange, materials, projectName = '', onArticle }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -276,15 +223,10 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
 
       {parts.length === 0 ? (
         <p className="px-3 py-6 text-sm text-muted text-center">
-          부품을 추가하세요. 자재(2440×1220)는 부품의 자재색·두께 조합으로 자동 도출됩니다.
+          부품을 추가하세요. 자재는 위에서 선택한 원장 규격으로 부품의 자재색·두께 조합에서 자동 도출됩니다.
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <datalist id={MATERIAL_DATALIST_ID}>
-            {allColorPresets().map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
           <datalist id={EDGE_DATALIST_ID}>
             {edgeNames.map((n) => (
               <option key={n} value={n} />
@@ -382,10 +324,28 @@ export function PartsTable({ parts, onChange, projectName = '', onArticle }: Pro
                     </select>
                   </td>
                   <td>
-                    <MaterialCell
-                      colorPresetId={p.colorPresetId}
-                      onChange={(id) => updateRow(i, { colorPresetId: id })}
-                    />
+                    <select
+                      className="w-full bg-transparent px-1 py-1.5 text-sm focus:outline-none rounded"
+                      value={p.stockMaterialId ?? ''}
+                      onChange={(e) =>
+                        updateRow(i, {
+                          stockMaterialId: e.target.value === '' ? null : e.target.value,
+                        })
+                      }
+                      title="이 부품을 재단할 원장 자재 — Default는 왼쪽 위에서 선택한 자재를 따릅니다"
+                    >
+                      <option value="">Default</option>
+                      {/* 참조 자재가 삭제된 경우 — 선택값이 사라지지 않게 명시적으로 표기. */}
+                      {p.stockMaterialId != null &&
+                        !materials.some((m) => m.id === p.stockMaterialId) && (
+                          <option value={p.stockMaterialId}>알 수 없는 자재 (삭제됨)</option>
+                        )}
+                      {materials.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.length}×{m.width})
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   {(() => {
                     const e = edgeSummary(p.edges);

@@ -12,6 +12,9 @@ export interface CutPart {
   label: string;
   grainDirection: GrainDirection;
   colorPresetId: string | null;
+  /** 이 부품을 재단할 원장 자재 id. null이면 Default 원장 자재를 따른다.
+   *  (웹 확장 필드 — 데스크톱 앱은 모르는 키를 무시하므로 v4 호환 유지.) */
+  stockMaterialId: string | null;
   thickness: number;
   priority: number;
   /** EDGE1~4 (4면 엣지 자재). 빈 문자열은 "엣지 없음". 항상 길이 4. */
@@ -45,6 +48,7 @@ export function createCutPart(p: Partial<CutPart> & { id: string; length: number
     label: '',
     grainDirection: 'none',
     colorPresetId: null,
+    stockMaterialId: null,
     thickness: 18,
     priority: 1,
     edges: ['', '', '', ''],
@@ -191,9 +195,28 @@ export interface Project {
   edgeMargin: number;
 }
 
-/** 자동 자재 도출 시 사용되는 표준 자재 크기. */
+/** 자동 자재 도출 시 사용되는 표준 자재 크기 (4×8자). */
 export const STANDARD_STOCK_LENGTH = 2440;
 export const STANDARD_STOCK_WIDTH = 1220;
+
+/** 자동 자재 도출에 쓸 원장 규격 — 미지정 시 표준(4×8자). */
+export interface StockSize {
+  length: number;
+  width: number;
+}
+
+/** 자동 자재 도출 규격 설정 — Default 규격 + 부품별 stockMaterialId 규격 맵. */
+export interface StockSizeConfig {
+  /** stockMaterialId 가 없는(Default) 부품에 쓸 규격. 미지정 시 표준(4×8자). */
+  defaultSize?: StockSize;
+  /** 부품 stockMaterialId → 규격. 모르는 id 는 defaultSize 로 폴백. */
+  sizeById?: Record<string, StockSize>;
+}
+
+/** 부품의 자재 그룹 키 — (colorPresetId, thickness, stockMaterialId) 조합. */
+export function partMaterialKey(p: CutPart): string {
+  return `${p.colorPresetId ?? ''}|${p.thickness}|${p.stockMaterialId ?? ''}`;
+}
 
 /** On-disk JSON 스키마 버전 (원본 .cutmaster v4와 호환). */
 export const PROJECT_SCHEMA_VERSION = 4;
@@ -228,19 +251,27 @@ function materialLabel(p: CutPart): string {
 }
 
 /**
- * 부품의 (colorPresetId, thickness) 고유 조합으로 자재 시트 자동 도출.
- * 모두 표준 크기(2440×1220) 무제한 수량(qty=999)으로 생성된다.
+ * 부품의 (colorPresetId, thickness, stockMaterialId) 고유 조합으로 자재 시트 자동 도출.
+ * 규격은 부품의 stockMaterialId 에 매핑된 원장 규격, 없으면 Default 규격
+ * (미지정 시 표준 2440×1220). 무제한 수량(qty=999)으로 생성된다.
  * 사용자가 직접 입력한 stocks가 있어도 무시하고 부품에서만 도출.
  */
-export function derivedStocks(project: Project): StockSheet[] {
+export function derivedStocks(project: Project, config?: StockSizeConfig): StockSheet[] {
+  const defaultSize: StockSize = {
+    length: config?.defaultSize?.length ?? STANDARD_STOCK_LENGTH,
+    width: config?.defaultSize?.width ?? STANDARD_STOCK_WIDTH,
+  };
   const seen = new Map<string, StockSheet>();
   for (const p of project.parts) {
-    const key = `${p.colorPresetId ?? ''}|${p.thickness}`;
+    const key = partMaterialKey(p);
     if (seen.has(key)) continue;
+    const size =
+      (p.stockMaterialId != null ? config?.sizeById?.[p.stockMaterialId] : undefined) ??
+      defaultSize;
     seen.set(key, {
       id: `auto_${key}`,
-      length: STANDARD_STOCK_LENGTH,
-      width: STANDARD_STOCK_WIDTH,
+      length: size.length,
+      width: size.width,
       qty: 999,
       label: materialLabel(p),
       grainDirection: 'none',
@@ -264,6 +295,7 @@ export function cutPartToJson(p: CutPart): Json {
     label: p.label,
     grain: p.grainDirection,
     ...(p.colorPresetId != null ? { colorPresetId: p.colorPresetId } : {}),
+    ...(p.stockMaterialId != null ? { stockMaterialId: p.stockMaterialId } : {}),
     thickness: p.thickness,
     priority: p.priority,
     ...(hasAnyEdge ? { edges: p.edges } : {}),
@@ -286,6 +318,7 @@ export function cutPartFromJson(j: Json): CutPart {
     label: (j.label as string) ?? '',
     grainDirection: ((j.grain as string) ?? 'none') as GrainDirection,
     colorPresetId: (j.colorPresetId as string | undefined) ?? null,
+    stockMaterialId: (j.stockMaterialId as string | undefined) ?? null,
     thickness: (j.thickness as number | undefined) ?? 18,
     priority: (j.priority as number | undefined) ?? 1,
     edges,

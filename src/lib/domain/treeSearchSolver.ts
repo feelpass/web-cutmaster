@@ -12,6 +12,7 @@ import type {
   StockSheet,
   Strip,
 } from './models';
+import { drawLength, drawWidth } from './models';
 
 /** 부품 단위 배치 허용 방향 (grain/lock 규칙). */
 function allowedOrientations(
@@ -850,11 +851,93 @@ function placeInScraps(trial: MutSheet[], part: CutPart, kerf: number, grainLock
   return false;
 }
 
+/** 부품의 그려진 방향 — 가로로 눕음(landscape)=1, 세로로 섬(portrait)=-1, 정사각형=0. */
+function drawnOrientation(p: PlacedPart): number {
+  const w = drawLength(p);
+  const h = drawWidth(p);
+  if (w > h) return 1;
+  if (h > w) return -1;
+  return 0;
+}
+
+/**
+ * 2-stage(vertical-first) 시트 후처리 — 소수 방향 strip을 오른쪽 끝으로.
+ *
+ * 그리디가 부품 순서대로 strip을 열기 때문에 대다수와 다른 방향으로 놓인
+ * 부품들의 strip이 동일 기둥들 "사이"에 끼는 배치가 나온다
+ * (예: 세로 기둥 4개 | 가로 눕힘 strip | 세로 기둥). 시트 전체에서 소수인
+ * 방향이 지배하는 strip을 상대 순서를 유지한 채 오른쪽 끝으로 보낸다.
+ * strip이 내용째 통째로 이동하므로 효율·겹침·guillotine 유효성은 불변.
+ */
+function reorderStripsByOrientation(s: SheetState): SheetState {
+  const strips = s.strips;
+  if (strips.length < 2) return s;
+
+  let landscapeTotal = 0;
+  let portraitTotal = 0;
+  const stripClass = strips.map((st) => {
+    let landscape = 0;
+    let portrait = 0;
+    for (const seg of st.segments) {
+      for (const p of seg.placed) {
+        const o = drawnOrientation(p);
+        if (o > 0) landscape++;
+        else if (o < 0) portrait++;
+      }
+    }
+    landscapeTotal += landscape;
+    portraitTotal += portrait;
+    if (landscape === portrait) return 0;
+    return landscape > portrait ? 1 : -1;
+  });
+  if (landscapeTotal === portraitTotal) return s; // 시트 전체 동률 — 소수 방향 없음.
+  const minority = landscapeTotal < portraitTotal ? 1 : -1;
+
+  // 소수 방향 strip만 뒤로, 나머지는 원래 순서 유지.
+  const order = strips.map((_, i) => i);
+  order.sort((a, b) => {
+    const ma = stripClass[a] === minority ? 1 : 0;
+    const mb = stripClass[b] === minority ? 1 : 0;
+    if (ma !== mb) return ma - mb;
+    return a - b;
+  });
+  if (order.every((si, pos) => si === pos)) return s;
+
+  // strip 앞 gap(kerf)은 시퀀스 위치를 유지한 채 새 offset을 누적 계산.
+  const gaps = strips.map(
+    (st, i) => st.offset - (i === 0 ? 0 : strips[i - 1].offset + strips[i - 1].width),
+  );
+  let newX = 0;
+  const out: StripState[] = [];
+  for (let pos = 0; pos < order.length; pos++) {
+    newX += gaps[pos];
+    const st = strips[order[pos]];
+    const d = newX - st.offset;
+    out.push({
+      offset: newX,
+      width: st.width,
+      segEnd: st.segEnd,
+      segments:
+        d === 0
+          ? st.segments
+          : st.segments.map((seg) => ({
+              yOffset: seg.yOffset,
+              height: seg.height,
+              xEnd: seg.xEnd + d,
+              placed: seg.placed.map((p) => ({ ...p, x: p.x + d })),
+            })),
+    });
+    newX += st.width;
+  }
+  return { stock: s.stock, strips: out };
+}
+
 function materialize(node: Node): CuttingPlan {
   const layouts: SheetLayout[] = [];
   let totalArea = 0;
   let usedArea = 0;
-  for (const s of node.sheets) {
+  for (const rawSheet of node.sheets) {
+    const s = reorderStripsByOrientation(rawSheet);
     if (s.strips.length === 0) continue;
     const placed: PlacedPart[] = [];
     const strips: Strip[] = [];
@@ -1490,10 +1573,11 @@ function frPlace(
  *
  * free-rect 그리디는 빈 사각형의 좌하단부터 채우므로 회전된 낱개 부품이 동일
  * 기둥들 "사이"에 끼는 배치가 나온다 (예: 1000 기둥 | 390 회전 | 1000 기둥).
- * 부품이 없는 세로 풀컷 라인으로 시트를 슬라이스로 분해한 뒤 폭 내림차순
- * (동률 시 원래 순서)으로 재배열한다 — 같은 폭 기둥이 이웃하고 좁은(회전)
- * 슬라이스가 오른쪽 끝으로 밀려 리핑 순서가 단순해진다. 슬라이스 순서만
- * 바뀌므로 효율·겹침·guillotine 유효성은 불변.
+ * 부품이 없는 세로 풀컷 라인으로 시트를 슬라이스로 분해한 뒤,
+ * ① 시트 소수 방향이 지배하는 슬라이스는 맨 오른쪽으로, ② 나머지는 폭
+ * 내림차순(동률 시 원래 순서)으로 재배열한다 — 같은 폭 기둥이 이웃하고
+ * 소수 방향(회전·눕힘) 슬라이스가 오른쪽 끝으로 밀려 리핑 순서가 단순해진다.
+ * 슬라이스 순서만 바뀌므로 효율·겹침·guillotine 유효성은 불변.
  */
 function reorderVerticalSlices(
   placedIn: PlacedPart[],
@@ -1507,7 +1591,7 @@ function reorderVerticalSlices(
   // 1) 부품 x-구간을 병합해 슬라이스 구간을 얻는다.
   const spans = placedIn
     .map((p) => {
-      const len = p.rotated ? p.part.width : p.part.length;
+      const len = drawLength(p);
       return { start: p.x, end: p.x + len };
     })
     .sort((a, b) => a.start - b.start);
@@ -1522,9 +1606,38 @@ function reorderVerticalSlices(
   }
   if (slices.length < 2) return none;
 
-  // 2) 새 순서: 폭 내림차순, 동률이면 원래 인덱스 순 유지.
+  // 2) 슬라이스별 부품 방향 집계 — 시트 소수 방향이 지배하는 슬라이스 식별.
+  let landscapeTotal = 0;
+  let portraitTotal = 0;
+  const sliceOri = slices.map(() => ({ landscape: 0, portrait: 0 }));
+  for (const p of placedIn) {
+    const len = drawLength(p);
+    const mid = p.x + len / 2;
+    const si = slices.findIndex((sl) => mid >= sl.start - EPS && mid <= sl.end + EPS);
+    if (si < 0) continue;
+    const o = drawnOrientation(p);
+    if (o > 0) {
+      sliceOri[si].landscape++;
+      landscapeTotal++;
+    } else if (o < 0) {
+      sliceOri[si].portrait++;
+      portraitTotal++;
+    }
+  }
+  const minority =
+    landscapeTotal === portraitTotal ? 0 : landscapeTotal < portraitTotal ? 1 : -1;
+  const sliceClass = sliceOri.map((c) => {
+    if (c.landscape === c.portrait) return 0;
+    return c.landscape > c.portrait ? 1 : -1;
+  });
+
+  // 3) 새 순서: ① 소수 방향 슬라이스는 맨 뒤(오른쪽), ② 폭 내림차순,
+  //    ③ 동률이면 원래 인덱스 순 유지.
   const order = slices.map((_, i) => i);
   order.sort((a, b) => {
+    const ma = minority !== 0 && sliceClass[a] === minority ? 1 : 0;
+    const mb = minority !== 0 && sliceClass[b] === minority ? 1 : 0;
+    if (ma !== mb) return ma - mb;
     const wa = slices[a].end - slices[a].start;
     const wb = slices[b].end - slices[b].start;
     if (Math.abs(wa - wb) > EPS) return wb - wa;
@@ -1532,7 +1645,7 @@ function reorderVerticalSlices(
   });
   if (order.every((si, pos) => si === pos)) return none;
 
-  // 3) 슬라이스 앞의 gap(풀컷 여백) 폭은 시퀀스 위치를 유지한 채 새 좌표를
+  // 4) 슬라이스 앞의 gap(풀컷 여백) 폭은 시퀀스 위치를 유지한 채 새 좌표를
   //    누적 계산한다. 전체 폭 합이 보존되므로 마지막 슬라이스 뒤(trailing)는
   //    이동량 0.
   const gaps: number[] = [];
@@ -1563,14 +1676,14 @@ function reorderVerticalSlices(
     return 0;
   };
 
-  // 4) 부품 이동 — 각 부품은 정확히 한 슬라이스 안에 있다. 경계값 EPS 오매칭을
+  // 5) 부품 이동 — 각 부품은 정확히 한 슬라이스 안에 있다. 경계값 EPS 오매칭을
   //    피하려고 부품 중점으로 영역을 찾는다.
   const placed = placedIn.map((p) => {
-    const len = p.rotated ? p.part.width : p.part.length;
+    const len = drawLength(p);
     return { ...p, x: p.x + deltaAt(p.x + len / 2) };
   });
 
-  // 5) 자투리는 영역 경계에서 분할해 조각별로 소속 영역과 함께 이동.
+  // 6) 자투리는 영역 경계에서 분할해 조각별로 소속 영역과 함께 이동.
   const leftovers: LeftoverRect[] = [];
   for (const r of leftoversIn) {
     const rEnd = r.x + r.width;
