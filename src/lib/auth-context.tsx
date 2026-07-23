@@ -7,6 +7,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { track } from './analytics';
 import { firebaseAuth, googleProvider, isFirebaseConfigured } from './firebase';
 
 interface AuthState {
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     await signInWithPopup(firebaseAuth(), googleProvider);
+    track('login', { method: 'google' });
   };
 
   const signOut = async () => {

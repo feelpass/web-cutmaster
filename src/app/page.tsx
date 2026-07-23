@@ -10,6 +10,7 @@ import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { ResultPane } from '@/components/ResultPane';
 import { StockMaterialPanel } from '@/components/StockMaterialPanel';
 import { StockMaterialsDialog } from '@/components/StockMaterialsDialog';
+import { track } from '@/lib/analytics';
 import { useAuth } from '@/lib/auth-context';
 import { listCloudProjects, saveProjectToCloud } from '@/lib/cloud';
 import { createProject, genId, type CuttingPlan, type Project } from '@/lib/domain/models';
@@ -153,17 +154,21 @@ export default function Home() {
     if (project == null || project.parts.length === 0 || calculating) return;
     setCalculating(true);
     try {
-      setPlan(
-        await solve(project, {
-          defaultSize:
-            stockMaterial != null
-              ? { length: stockMaterial.length, width: stockMaterial.width }
-              : undefined,
-          sizeById: Object.fromEntries(
-            materials.map((m) => [m.id, { length: m.length, width: m.width }]),
-          ),
-        }),
-      );
+      const result = await solve(project, {
+        defaultSize:
+          stockMaterial != null
+            ? { length: stockMaterial.length, width: stockMaterial.width }
+            : undefined,
+        sizeById: Object.fromEntries(
+          materials.map((m) => [m.id, { length: m.length, width: m.width }]),
+        ),
+      });
+      setPlan(result);
+      track('calculate', {
+        part_count: project.parts.reduce((n, p) => n + p.qty, 0),
+        sheet_count: result.sheets.length,
+        unplaced_count: result.unplaced.length,
+      });
     } catch (e) {
       alert(`계산 실패: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -191,6 +196,7 @@ export default function Home() {
         await saveProjectToCloud(user.uid, target);
         where = '로컬+클라우드';
       }
+      track('save_project', { storage: where === '로컬' ? 'local' : 'local_cloud' });
       setSaveStatus(
         `"${target.name}" ${where} 저장됨 ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`,
       );
@@ -228,6 +234,7 @@ export default function Home() {
     if (project == null) return;
     try {
       const result = await saveProjectFile(project);
+      track('export_cutmaster_file');
       if (result.kind === 'picked') {
         setSaveStatus(`파일 저장됨: ${result.fileName}`);
       } else if (result.kind === 'downloaded') {

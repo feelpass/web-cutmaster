@@ -5,6 +5,7 @@ import type { CutPart, CuttingPlan, Project } from '@/lib/domain/models';
 import { sheetUsedPercent } from '@/lib/domain/models';
 import { planSummaryFromPlan } from '@/lib/domain/planSummary';
 import { edgeUsagesFromParts } from '@/lib/domain/edgeBanding';
+import { track } from '@/lib/analytics';
 import { colorPresetById } from '@/lib/colorPresets';
 import { stockMaterialById } from '@/lib/stockMaterials';
 import { exportSheetsToPngZip } from '@/lib/sheetImageExport';
@@ -54,6 +55,7 @@ export function ResultPane({ project, plan, calculating }: Props) {
       });
       const zipName = `${project.name.trim() !== '' ? project.name.trim() : 'cutmaster'}-시트.zip`;
       await exportSheetsToPngZip(svgs, headers, zipName);
+      track('export_png_zip', { sheet_count: plan.sheets.length });
     } catch (e) {
       alert(`이미지 저장 실패: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -115,7 +117,10 @@ export function ResultPane({ project, plan, calculating }: Props) {
         )}
         <div className="flex-1" />
         <button
-          onClick={() => window.print()}
+          onClick={() => {
+            track('export_pdf', { sheet_count: plan.sheets.length });
+            window.print();
+          }}
           className="text-xs px-3 py-1.5 rounded-md border border-line bg-surface hover:bg-zinc-50"
           title="요약 + 시트별 배치도를 인쇄 대화상자에서 PDF로 저장"
         >

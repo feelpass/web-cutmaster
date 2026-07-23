@@ -12,11 +12,15 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId,
 );
+
+/** Analytics(GA4)까지 설정됐는지 — measurementId가 없으면 이벤트 수집은 no-op. */
+export const isAnalyticsConfigured = isFirebaseConfigured && Boolean(firebaseConfig.measurementId);
 
 let app: FirebaseApp | null = null;
 
@@ -28,6 +32,10 @@ function getApp(): FirebaseApp {
     app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
   }
   return app;
+}
+
+export function firebaseApp(): FirebaseApp {
+  return getApp();
 }
 
 export function firebaseAuth(): Auth {

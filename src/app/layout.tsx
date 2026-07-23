@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { AnalyticsInit } from "@/components/AnalyticsInit";
 
 export const metadata: Metadata = {
   title: "CutMaster — 합판 재단 최적화",
@@ -22,6 +23,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
+        <AnalyticsInit />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
